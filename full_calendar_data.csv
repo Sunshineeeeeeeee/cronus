@@ -1,0 +1,1182 @@
+Date,Time,Currency,Impact,Event,Actual,Forecast,Previous
+2024-12-01,10:45pm,NZD,Medium,Building Consents m/m,-5.2%,,2.4%
+2024-12-02,12:50am,JPY,Medium,Capital Spending q/y,8.1%,6.7%,7.4%
+2024-12-02,1:00am,AUD,Medium,MI Inflation Gauge m/m,0.2%,,0.3%
+2024-12-02,1:30am,AUD,N/A,Retail Sales m/m,0.6%,0.4%,0.1%
+2024-12-02,1:30am,AUD,Medium,ANZ Job Advertisements m/m,-1.3%,,0.7%
+2024-12-02,1:30am,AUD,Medium,Building Approvals m/m,4.2%,1.2%,5.8%
+2024-12-02,1:30am,AUD,Medium,Company Operating Profits q/q,-4.6%,0.6%,-6.8%
+2024-12-02,1:30am,JPY,Medium,Final Manufacturing PMI,49.0,49.0,49.0
+2024-12-02,2:45am,CNY,Medium,Caixin Manufacturing PMI,51.5,50.6,50.3
+2024-12-02,6:30am,AUD,Medium,Commodity Prices y/y,-11.8%,,-9.3%
+2024-12-02,8:00am,GBP,Medium,Nationwide HPI m/m,1.2%,0.2%,0.1%
+2024-12-02,8:30am,CHF,Medium,Retail Sales y/y,1.4%,2.6%,1.8%
+2024-12-02,9:15am,EUR,Medium,Spanish Manufacturing PMI,53.1,53.9,54.5
+2024-12-02,9:30am,CHF,Medium,Manufacturing PMI,48.5,49.6,49.9
+2024-12-02,9:45am,EUR,Medium,Italian Manufacturing PMI,44.5,46.1,46.9
+2024-12-02,9:50am,EUR,Medium,French Final Manufacturing PMI,43.1,43.3,43.2
+2024-12-02,9:55am,EUR,Medium,German Final Manufacturing PMI,43.0,43.2,43.2
+2024-12-02,10:00am,EUR,Medium,Final Manufacturing PMI,45.2,45.2,45.2
+2024-12-02,10:00am,EUR,Medium,Italian Monthly Unemployment Rate,5.8%,6.1%,6.0%
+2024-12-02,10:30am,GBP,Medium,Final Manufacturing PMI,48.0,48.6,48.6
+2024-12-02,11:00am,EUR,Medium,Unemployment Rate,6.3%,6.3%,6.3%
+2024-12-02,3:30pm,CAD,Medium,Manufacturing PMI,52.0,,51.1
+2024-12-02,3:45pm,USD,N/A,Final Manufacturing PMI,49.7,48.8,48.8
+2024-12-02,4:00pm,USD,High,ISM Manufacturing PMI,48.4,47.7,46.5
+2024-12-02,4:00pm,USD,N/A,ISM Manufacturing Prices,50.3,55.2,54.8
+2024-12-02,4:00pm,USD,Medium,Construction Spending m/m,0.4%,0.2%,0.1%
+2024-12-02,9:15pm,USD,N/A,FOMC Member Waller Speaks,,,
+2024-12-02,10:30pm,USD,Medium,FOMC Member Williams Speaks,,,
+2024-12-02,10:45pm,NZD,Medium,Overseas Trade Index q/q,2.4%,1.2%,2.1%
+2024-12-03,12:50am,JPY,Medium,Monetary Base y/y,-0.3%,0.2%,-0.3%
+2024-12-03,1:01am,GBP,Medium,BRC Retail Sales Monitor y/y,-3.4%,0.7%,0.3%
+2024-12-03,1:30am,AUD,Medium,Current Account,-14.1B,-10.3B,-16.4B
+2024-12-03,4:35am,JPY,Medium,10-y Bond Auction,1.08|3.1,,1.00|3.1
+2024-12-03,8:30am,CHF,High,CPI m/m,-0.1%,-0.1%,-0.1%
+2024-12-03,9:00am,EUR,Medium,Spanish Unemployment Change,-16.0K,29.3K,26.8K
+2024-12-03,3:44pm,NZD,Medium,GDT Price Index,1.2%,,1.9%
+2024-12-03,4:00pm,USD,High,JOLTS Job Openings,7.74M,7.51M,7.37M
+2024-12-03,4:06pm,USD,Medium,RCM/TIPP Economic Optimism,54.0,54.1,53.2
+2024-12-03,All Day,USD,Medium,Wards Total Vehicle Sales,16.5M,16.0M,16.0M
+2024-12-03,4:52pm,EUR,Medium,French Gov Budget Balance,-157.4B,,-173.8B
+2024-12-03,6:35pm,USD,Medium,FOMC Member Kugler Speaks,,,
+2024-12-03,9:45pm,USD,Medium,FOMC Member Goolsbee Speaks,,,
+2024-12-04,1:00am,NZD,Medium,ANZ Commodity Prices m/m,2.9%,,1.4%
+2024-12-04,1:30am,AUD,High,GDP q/q,0.3%,0.5%,0.2%
+2024-12-04,2:00am,NZD,N/A,RBNZ Gov Orr Speaks,,,
+2024-12-04,2:45am,CNY,Medium,Caixin Services PMI,51.5,52.4,52.0
+2024-12-04,9:15am,EUR,Medium,Spanish Services PMI,53.1,53.4,54.9
+2024-12-04,9:45am,EUR,Medium,Italian Services PMI,49.2,50.9,52.4
+2024-12-04,9:50am,EUR,Medium,French Final Services PMI,46.9,45.7,45.7
+2024-12-04,9:55am,EUR,Medium,German Final Services PMI,49.3,49.4,49.4
+2024-12-04,10:00am,EUR,Medium,Final Services PMI,49.5,49.2,49.2
+2024-12-04,10:00am,GBP,N/A,BOE Gov Bailey Speaks,,,
+2024-12-04,10:30am,GBP,Medium,Final Services PMI,50.8,50.0,50.0
+2024-12-04,11:00am,EUR,Medium,PPI m/m,0.4%,0.4%,-0.6%
+2024-12-04,11:33am,EUR,Medium,German 10-y Bond Auction,2.07|2.4,,2.38|2.3
+2024-12-04,2:15pm,USD,High,ADP Non-Farm Employment Change,146K,152K,184K
+2024-12-04,2:30pm,CAD,Medium,Labor Productivity q/q,-0.4%,-0.2%,-0.1%
+2024-12-04,2:30pm,EUR,N/A,ECB President Lagarde Speaks,,,
+2024-12-04,2:45pm,USD,Medium,FOMC Member Musalem Speaks,,,
+2024-12-04,3:45pm,USD,N/A,Final Services PMI,56.1,57.0,57.0
+2024-12-04,4:00pm,USD,High,ISM Services PMI,52.1,55.7,56.0
+2024-12-04,4:00pm,USD,Medium,Factory Orders m/m,0.2%,0.2%,-0.2%
+2024-12-04,4:30pm,USD,N/A,Crude Oil Inventories,-5.1M,-1.6M,-1.8M
+2024-12-04,6:10pm,EUR,Medium,German Buba President Nagel Speaks,,,
+2024-12-04,7:45pm,USD,High,Fed Chair Powell Speaks,,,
+2024-12-04,8:00pm,USD,Medium,Beige Book,,,
+2024-12-05,1:30am,AUD,Medium,Goods Trade Balance,5.95B,4.53B,4.53B
+2024-12-05,4:35am,JPY,Medium,30-y Bond Auction,2.29|3.5,,2.27|3.4
+2024-12-05,7:45am,CHF,Medium,Unemployment Rate,2.6%,2.7%,2.6%
+2024-12-05,8:00am,EUR,Medium,German Factory Orders m/m,-1.5%,-2.0%,7.2%
+2024-12-05,8:45am,EUR,Medium,French Industrial Production m/m,-0.1%,0.2%,-0.8%
+2024-12-05,10:30am,GBP,N/A,Construction PMI,55.2,53.5,54.3
+2024-12-05,10:37am,EUR,Medium,Spanish 10-y Bond Auction,2.74|2.6,,2.92|1.7
+2024-12-05,11:00am,EUR,Medium,Retail Sales m/m,-0.5%,-0.3%,0.5%
+2024-12-05,All Day,All,N/A,OPEC-JMMC Meetings,,,
+2024-12-05,1:30pm,USD,Medium,Challenger Job Cuts y/y,26.8%,,50.9%
+2024-12-05,2:30pm,CAD,Medium,Trade Balance,-0.9B,-1.0B,-1.3B
+2024-12-05,2:30pm,USD,High,Unemployment Claims,224K,215K,215K
+2024-12-05,2:30pm,USD,Medium,Trade Balance,-73.8B,-75.2B,-83.8B
+2024-12-05,4:30pm,USD,Medium,Natural Gas Storage,-30B,-38B,-2B
+2024-12-05,6:00pm,GBP,Medium,MPC Member Greene Speaks,,,
+2024-12-06,12:30am,JPY,Medium,Average Cash Earnings y/y,2.6%,2.6%,2.5%
+2024-12-06,12:30am,JPY,Medium,Household Spending y/y,-1.3%,-2.6%,-1.1%
+2024-12-06,6:00am,JPY,Medium,Leading Indicators,108.6%,108.9%,109.1%
+2024-12-06,8:00am,EUR,Medium,German Industrial Production m/m,-1.0%,1.0%,-2.0%
+2024-12-06,8:00am,GBP,Medium,Halifax HPI m/m,1.3%,0.3%,0.2%
+2024-12-06,8:45am,EUR,Medium,French Trade Balance,-7.7B,-8.0B,-8.4B
+2024-12-06,9:00am,CHF,Medium,Foreign Currency Reserves,725B,,719B
+2024-12-06,10:01am,EUR,Medium,Italian Retail Sales m/m,-0.5%,0.9%,1.3%
+2024-12-06,11:00am,EUR,Medium,Final Employment Change q/q,0.2%,0.2%,0.2%
+2024-12-06,11:00am,EUR,Medium,Revised GDP q/q,0.4%,0.4%,0.4%
+2024-12-06,2:30pm,CAD,High,Employment Change,50.5K,24.7K,14.5K
+2024-12-06,2:30pm,CAD,High,Unemployment Rate,6.8%,6.6%,6.5%
+2024-12-06,2:30pm,USD,High,Average Hourly Earnings m/m,0.4%,0.3%,0.4%
+2024-12-06,2:30pm,USD,High,Non-Farm Employment Change,227K,218K,36K
+2024-12-06,2:30pm,USD,High,Unemployment Rate,4.2%,4.1%,4.1%
+2024-12-06,3:15pm,USD,Medium,FOMC Member Bowman Speaks,,,
+2024-12-06,4:00pm,CAD,N/A,Ivey PMI,52.3,53.1,52.0
+2024-12-06,4:00pm,USD,N/A,Prelim UoM Consumer Sentiment,74.0,73.3,71.8
+2024-12-06,4:00pm,USD,N/A,Prelim UoM Inflation Expectations,2.9%,,2.6%
+2024-12-06,4:30pm,USD,Medium,FOMC Member Goolsbee Speaks,,,
+2024-12-06,6:00pm,USD,Medium,FOMC Member Hammack Speaks,,,
+2024-12-06,7:00pm,USD,Medium,FOMC Member Daly Speaks,,,
+2024-12-06,9:00pm,USD,Medium,Consumer Credit m/m,19.2B,10.4B,3.2B
+2024-12-09,12:50am,JPY,Medium,Bank Lending y/y,3.0%,2.6%,2.6%
+2024-12-09,12:50am,JPY,Medium,Current Account,2.41T,2.28T,1.27T
+2024-12-09,12:50am,JPY,Medium,Final GDP Price Index y/y,2.4%,2.5%,2.5%
+2024-12-09,12:50am,JPY,Medium,Final GDP q/q,0.3%,0.3%,0.2%
+2024-12-09,2:30am,CNY,N/A,CPI y/y,0.2%,0.4%,0.3%
+2024-12-09,2:30am,CNY,N/A,PPI y/y,-2.5%,-2.8%,-2.9%
+2024-12-09,6:00am,JPY,Medium,Economy Watchers Sentiment,49.4,47.3,47.5
+2024-12-09,9:00am,CHF,Medium,SECO Consumer Climate,-37,-38,-37
+2024-12-09,10:30am,EUR,Medium,Sentix Investor Confidence,-17.5,-12.4,-12.8
+2024-12-09,All Day,EUR,Medium,Eurogroup Meetings,,,
+2024-12-09,2:00pm,GBP,Medium,MPC Member Ramsden Speaks,,,
+2024-12-09,4:00pm,USD,Medium,Final Wholesale Inventories m/m,0.2%,0.2%,0.2%
+2024-12-10,12:50am,JPY,Medium,M2 Money Stock y/y,1.2%,1.2%,1.2%
+2024-12-10,1:30am,AUD,Medium,NAB Business Confidence,-3,,5
+2024-12-10,4:06am,CNY,Medium,USD-Denominated Trade Balance,97.4B,94.0B,95.7B
+2024-12-10,4:07am,CNY,Medium,Trade Balance,693B,682B,679B
+2024-12-10,4:30am,AUD,High,Cash Rate,4.35%,4.35%,4.35%
+2024-12-10,4:30am,AUD,High,RBA Rate Statement,,,
+2024-12-10,5:30am,AUD,N/A,RBA Press Conference,,,
+2024-12-10,6:58am,JPY,Medium,Prelim Machine Tool Orders y/y,3.0%,,9.3%
+2024-12-10,8:00am,EUR,Medium,German Final CPI m/m,-0.2%,-0.2%,-0.2%
+2024-12-10,10:00am,EUR,Medium,Italian Industrial Production m/m,0.0%,-0.1%,-0.3%
+2024-12-10,All Day,EUR,Medium,ECOFIN Meetings,,,
+2024-12-10,12:00pm,USD,Medium,NFIB Small Business Index,101.7,94.6,93.7
+2024-12-10,All Day,All,N/A,OPEC Meetings,,,
+2024-12-10,2:30pm,USD,Medium,Revised Nonfarm Productivity q/q,2.2%,2.3%,2.2%
+2024-12-10,2:30pm,USD,Medium,Revised Unit Labor Costs q/q,0.8%,1.3%,1.9%
+2024-12-10,10:45pm,NZD,Medium,Manufacturing Sales q/q,-0.1%,,0.9%
+2024-12-11,12:50am,JPY,Medium,BSI Manufacturing Index,6.3,1.8,4.5
+2024-12-11,12:50am,JPY,Medium,PPI y/y,3.7%,3.4%,3.6%
+2024-12-11,8:00am,AUD,Medium,RBA Deputy Gov Hauser Speaks,,,
+2024-12-11,11:05am,GBP,Medium,10-y Bond Auction,4.33|2.9,,4.48|2.8
+2024-12-11,2:30pm,USD,High,Core CPI m/m,0.3%,0.3%,0.3%
+2024-12-11,2:30pm,USD,High,CPI m/m,0.3%,0.3%,0.2%
+2024-12-11,2:30pm,USD,High,CPI y/y,2.7%,2.7%,2.6%
+2024-12-11,3:45pm,CAD,High,BOC Rate Statement,,,
+2024-12-11,3:45pm,CAD,High,Overnight Rate,3.25%,3.25%,3.75%
+2024-12-11,4:30pm,CAD,High,BOC Press Conference,,,
+2024-12-11,4:30pm,USD,N/A,Crude Oil Inventories,-1.4M,-1.0M,-5.1M
+2024-12-11,7:01pm,USD,Medium,10-y Bond Auction,4.24|2.7,,4.35|2.6
+2024-12-11,8:00pm,USD,Medium,Federal Budget Balance,-366.8B,-349.0B,-257.5B
+2024-12-12,1:01am,GBP,Medium,RICS House Price Balance,25%,19%,16%
+2024-12-12,1:30am,AUD,High,Employment Change,35.6K,26.0K,12.1K
+2024-12-12,1:30am,AUD,High,Unemployment Rate,3.9%,4.2%,4.1%
+2024-12-12,9:30am,CHF,High,SNB Monetary Policy Assessment,,,
+2024-12-12,9:30am,CHF,High,SNB Policy Rate,0.50%,0.75%,1.00%
+2024-12-12,10:00am,CHF,High,SNB Press Conference,,,
+2024-12-12,10:00am,EUR,Medium,Italian Quarterly Unemployment Rate,6.1%,6.6%,6.7%
+2024-12-12,11:15am,EUR,Medium,Italian 10-y Bond Auction,3.19|2.1,,3.39|1.6
+2024-12-12,2:15pm,EUR,High,Main Refinancing Rate,3.15%,3.15%,3.40%
+2024-12-12,2:15pm,EUR,High,Monetary Policy Statement,,,
+2024-12-12,2:30pm,CAD,Medium,Building Permits m/m,-3.1%,-4.8%,11.5%
+2024-12-12,2:30pm,USD,High,Core PPI m/m,0.2%,0.2%,0.3%
+2024-12-12,2:30pm,USD,High,PPI m/m,0.4%,0.2%,0.3%
+2024-12-12,2:30pm,USD,High,Unemployment Claims,242K,221K,225K
+2024-12-12,2:45pm,EUR,High,ECB Press Conference,,,
+2024-12-12,3:30pm,GBP,Medium,CB Leading Index m/m,0.0%,,0.0%
+2024-12-12,4:30pm,USD,Medium,Natural Gas Storage,-190B,-172B,-30B
+2024-12-12,7:01pm,USD,Medium,30-y Bond Auction,4.54|2.4,,4.61|2.6
+2024-12-12,10:30pm,NZD,Medium,BusinessNZ Manufacturing Index,45.5,,45.7
+2024-12-12,10:45pm,NZD,Medium,Visitor Arrivals m/m,0.6%,,1.3%
+2024-12-13,12:50am,JPY,Medium,Tankan Manufacturing Index,14,13,13
+2024-12-13,12:50am,JPY,Medium,Tankan Non-Manufacturing Index,33,33,34
+2024-12-13,1:01am,GBP,Medium,GfK Consumer Confidence,-17,-18,-18
+2024-12-13,2:30am,AUD,Medium,RBA Assist Gov Hunter Speaks,,,
+2024-12-13,5:30am,JPY,Medium,Revised Industrial Production m/m,2.8%,3.0%,3.0%
+2024-12-13,8:00am,EUR,Medium,German Trade Balance,13.4B,15.7B,16.9B
+2024-12-13,8:00am,EUR,Medium,German WPI m/m,0.0%,0.2%,0.4%
+2024-12-13,8:00am,GBP,High,GDP m/m,-0.1%,0.1%,-0.1%
+2024-12-13,8:00am,GBP,Medium,Construction Output m/m,-0.4%,0.2%,0.1%
+2024-12-13,8:00am,GBP,Medium,Goods Trade Balance,-19.0B,-16.1B,-16.3B
+2024-12-13,8:00am,GBP,Medium,Index of Services 3m/3m,0.1%,0.2%,0.1%
+2024-12-13,8:00am,GBP,Medium,Industrial Production m/m,-0.6%,0.3%,-0.5%
+2024-12-13,8:00am,GBP,Medium,Manufacturing Production m/m,-0.6%,0.2%,-1.0%
+2024-12-13,8:45am,EUR,Medium,French Final CPI m/m,-0.1%,-0.1%,-0.1%
+2024-12-13,10:30am,GBP,Medium,Consumer Inflation Expectations,3.0%,,2.7%
+2024-12-13,All Day,All,Medium,G7 Meetings,,,
+2024-12-13,11:00am,EUR,Medium,German Buba Monthly Report,,,
+2024-12-13,11:00am,EUR,Medium,Industrial Production m/m,0.0%,0.0%,-1.5%
+2024-12-13,12:01pm,CNY,Medium,M2 Money Supply y/y,7.1%,7.6%,7.5%
+2024-12-13,12:02pm,CNY,N/A,New Loans,580B,950B,500B
+2024-12-13,1:32pm,GBP,Medium,NIESR GDP Estimate,0.0%,,0.1%
+2024-12-13,2:30pm,CAD,Medium,Capacity Utilization Rate,79.3%,78.9%,79.1%
+2024-12-13,2:30pm,CAD,Medium,Manufacturing Sales m/m,2.1%,1.2%,-0.6%
+2024-12-13,2:30pm,CAD,Medium,Wholesale Sales m/m,1.0%,0.6%,1.3%
+2024-12-13,2:30pm,USD,Medium,Import Prices m/m,0.1%,-0.2%,0.1%
+2024-12-15,5:23am,CNY,Medium,Foreign Direct Investment ytd/y,-27.9%,,-29.8%
+2024-12-15,10:30pm,NZD,Medium,BusinessNZ Services Index,49.5,,46.2
+2024-12-15,10:45pm,NZD,Medium,FPI m/m,-0.1%,,-0.9%
+2024-12-15,11:00pm,AUD,Medium,Flash Manufacturing PMI,48.2,,49.4
+2024-12-15,11:00pm,AUD,Medium,Flash Services PMI,50.4,,50.5
+2024-12-16,12:50am,JPY,Medium,Core Machinery Orders m/m,2.1%,1.1%,-0.7%
+2024-12-16,1:01am,GBP,Medium,Rightmove HPI m/m,-1.7%,,-1.4%
+2024-12-16,1:30am,JPY,Medium,Flash Manufacturing PMI,49.5,49.2,49.0
+2024-12-16,2:30am,CNY,Medium,New Home Prices m/m,-0.20%,,-0.51%
+2024-12-16,3:00am,CNY,N/A,Industrial Production y/y,5.4%,5.4%,5.3%
+2024-12-16,3:00am,CNY,N/A,Retail Sales y/y,3.0%,5.0%,4.8%
+2024-12-16,3:00am,CNY,Medium,Fixed Asset Investment ytd/y,3.3%,3.5%,3.4%
+2024-12-16,3:00am,CNY,Medium,NBS Press Conference,,,
+2024-12-16,3:00am,CNY,Medium,Unemployment Rate,5.0%,5.0%,5.0%
+2024-12-16,5:30am,JPY,Medium,Tertiary Industry Activity m/m,0.3%,-0.1%,-0.1%
+2024-12-16,8:30am,CHF,Medium,PPI m/m,-0.6%,0.2%,-0.3%
+2024-12-16,9:15am,EUR,High,French Flash Manufacturing PMI,41.9,43.2,43.1
+2024-12-16,9:15am,EUR,High,French Flash Services PMI,48.2,46.9,46.9
+2024-12-16,9:15am,EUR,N/A,ECB President Lagarde Speaks,,,
+2024-12-16,9:30am,EUR,High,German Flash Manufacturing PMI,42.5,43.1,43.0
+2024-12-16,9:30am,EUR,High,German Flash Services PMI,51.0,49.5,49.3
+2024-12-16,9:35am,EUR,N/A,ECB President Lagarde Speaks,,,
+2024-12-16,10:00am,EUR,N/A,Flash Manufacturing PMI,45.2,45.3,45.2
+2024-12-16,10:00am,EUR,N/A,Flash Services PMI,51.4,49.5,49.5
+2024-12-16,10:30am,GBP,High,Flash Manufacturing PMI,47.3,48.4,48.0
+2024-12-16,10:30am,GBP,High,Flash Services PMI,51.4,50.9,50.8
+2024-12-16,2:15pm,CAD,Medium,Housing Starts,262K,246K,242K
+2024-12-16,2:30pm,USD,N/A,Empire State Manufacturing Index,0.2,6.4,31.2
+2024-12-16,3:45pm,USD,High,Flash Manufacturing PMI,48.3,49.4,49.7
+2024-12-16,3:45pm,USD,High,Flash Services PMI,58.5,55.7,56.1
+2024-12-16,9:20pm,CAD,High,BOC Gov Macklem Speaks,,,
+2024-12-17,12:20am,AUD,Medium,Westpac Consumer Sentiment,-2.0%,,5.3%
+2024-12-17,8:00am,GBP,High,Claimant Count Change,0.3K,28.2K,-10.9K
+2024-12-17,8:00am,GBP,N/A,Average Earnings Index 3m/y,5.2%,4.6%,4.4%
+2024-12-17,8:00am,GBP,Medium,Unemployment Rate,4.3%,4.3%,4.3%
+2024-12-17,9:00am,CHF,Medium,SECO Economic Forecasts,,,
+2024-12-17,10:00am,EUR,N/A,German ifo Business Climate,84.7,85.5,85.6
+2024-12-17,10:00am,EUR,Medium,Italian Trade Balance,5.15B,3.22B,2.58B
+2024-12-17,11:00am,EUR,N/A,German ZEW Economic Sentiment,15.7,6.8,7.4
+2024-12-17,11:00am,EUR,Medium,Trade Balance,6.1B,11.7B,12.6B
+2024-12-17,11:00am,EUR,Medium,ZEW Economic Sentiment,17.0,12.2,12.5
+2024-12-17,2:30pm,CAD,High,CPI m/m,0.0%,0.1%,0.4%
+2024-12-17,2:30pm,CAD,High,Median CPI y/y,2.6%,2.4%,2.6%
+2024-12-17,2:30pm,CAD,High,Trimmed CPI y/y,2.7%,2.6%,2.7%
+2024-12-17,2:30pm,CAD,N/A,Common CPI y/y,2.0%,2.1%,2.2%
+2024-12-17,2:30pm,CAD,Medium,Foreign Securities Purchases,21.55B,24.50B,29.65B
+2024-12-17,2:30pm,CAD,Medium,NHPI m/m,0.1%,0.1%,-0.4%
+2024-12-17,2:30pm,USD,High,Core Retail Sales m/m,0.2%,0.4%,0.2%
+2024-12-17,2:30pm,USD,High,Retail Sales m/m,0.7%,0.6%,0.5%
+2024-12-17,2:32pm,CAD,Medium,Core CPI m/m,-0.1%,,0.4%
+2024-12-17,3:00pm,CNY,Medium,CB Leading Index m/m,-0.1%,,-0.3%
+2024-12-17,3:15pm,USD,Medium,Capacity Utilization Rate,76.8%,77.3%,77.0%
+2024-12-17,3:15pm,USD,Medium,Industrial Production m/m,-0.1%,0.3%,-0.4%
+2024-12-17,3:37pm,NZD,Medium,GDT Price Index,-2.8%,,1.2%
+2024-12-17,4:00pm,USD,Medium,Business Inventories m/m,0.1%,0.2%,0.0%
+2024-12-17,4:00pm,USD,Medium,NAHB Housing Market Index,46,47,46
+2024-12-17,9:00pm,NZD,Medium,Westpac Consumer Sentiment,97.5,,90.8
+2024-12-17,10:45pm,NZD,Medium,Current Account,-10.58B,-10.45B,-4.70B
+2024-12-18,12:30am,AUD,Medium,MI Leading Index m/m,0.1%,,0.2%
+2024-12-18,12:50am,JPY,Medium,Trade Balance,-0.38T,-0.45T,-0.23T
+2024-12-18,1:00am,AUD,Medium,Mid-Year Economic and Fiscal Outlook,,,
+2024-12-18,8:00am,GBP,High,CPI y/y,2.6%,2.6%,2.3%
+2024-12-18,8:00am,GBP,Medium,Core CPI y/y,3.5%,3.6%,3.3%
+2024-12-18,8:00am,GBP,Medium,PPI Input m/m,0.0%,0.2%,0.1%
+2024-12-18,8:00am,GBP,Medium,PPI Output m/m,0.3%,0.2%,-0.1%
+2024-12-18,8:00am,GBP,Medium,RPI y/y,3.6%,3.7%,3.4%
+2024-12-18,10:30am,EUR,Medium,German Buba President Nagel Speaks,,,
+2024-12-18,10:30am,GBP,Medium,HPI y/y,3.4%,3.1%,2.8%
+2024-12-18,11:00am,EUR,Medium,Final Core CPI y/y,2.7%,2.7%,2.7%
+2024-12-18,11:00am,EUR,Medium,Final CPI y/y,2.2%,2.3%,2.3%
+2024-12-18,12:00pm,GBP,Medium,CBI Industrial Order Expectations,-40,-22,-19
+2024-12-18,2:30pm,USD,N/A,Building Permits,1.51M,1.43M,1.42M
+2024-12-18,2:30pm,USD,Medium,Current Account,-311B,-286B,-275B
+2024-12-18,2:30pm,USD,Medium,Housing Starts,1.29M,1.35M,1.31M
+2024-12-18,3:00pm,CHF,Medium,SNB Quarterly Bulletin,,,
+2024-12-18,4:30pm,USD,N/A,Crude Oil Inventories,-0.9M,-1.6M,-1.4M
+2024-12-18,8:00pm,USD,High,Federal Funds Rate,4.50%,4.50%,4.75%
+2024-12-18,8:00pm,USD,High,FOMC Economic Projections,,,
+2024-12-18,8:00pm,USD,High,FOMC Statement,,,
+2024-12-18,8:30pm,USD,High,FOMC Press Conference,,,
+2024-12-18,10:45pm,NZD,High,GDP q/q,-1.0%,-0.2%,-1.1%
+2024-12-19,1:00am,AUD,Medium,MI Inflation Expectations,4.2%,,3.8%
+2024-12-19,1:00am,NZD,Medium,ANZ Business Confidence,62.3,,64.9
+2024-12-19,3:52am,JPY,High,BOJ Policy Rate,<0.25%,<0.25%,<0.25%
+2024-12-19,3:52am,JPY,High,Monetary Policy Statement,,,
+2024-12-19,7:30am,JPY,High,BOJ Press Conference,,,
+2024-12-19,8:00am,CHF,Medium,Trade Balance,5.42B,6.20B,8.03B
+2024-12-19,8:00am,EUR,Medium,German GfK Consumer Climate,-21.3,-22.6,-23.1
+2024-12-19,10:02am,EUR,Medium,Current Account,25.8B,33.5B,38.8B
+2024-12-19,1:00pm,GBP,High,Monetary Policy Summary,,,
+2024-12-19,1:00pm,GBP,High,MPC Official Bank Rate Votes,0-3-6,0-2-7,0-8-1
+2024-12-19,1:00pm,GBP,High,Official Bank Rate,4.75%,4.75%,4.75%
+2024-12-19,2:30pm,USD,High,Final GDP q/q,3.1%,2.8%,2.8%
+2024-12-19,2:30pm,USD,High,Unemployment Claims,220K,229K,242K
+2024-12-19,2:30pm,USD,N/A,Final GDP Price Index q/q,1.9%,1.9%,1.9%
+2024-12-19,2:30pm,USD,N/A,Philly Fed Manufacturing Index,-16.4,2.9,-5.5
+2024-12-19,4:00pm,USD,N/A,Existing Home Sales,4.15M,4.09M,3.96M
+2024-12-19,4:00pm,USD,Medium,CB Leading Index m/m,0.3%,-0.1%,-0.4%
+2024-12-19,4:30pm,USD,Medium,Natural Gas Storage,-125B,-123B,-190B
+2024-12-19,10:00pm,USD,Medium,TIC Long-Term Purchases,152.3B,154.3B,216.1B
+2024-12-19,10:45pm,NZD,Medium,Trade Balance,-437M,-1951M,-1658M
+2024-12-20,12:30am,JPY,Medium,National Core CPI y/y,2.7%,2.6%,2.3%
+2024-12-20,1:30am,AUD,Medium,Private Sector Credit m/m,0.5%,0.5%,0.6%
+2024-12-20,2:00am,CNY,N/A,1-y Loan Prime Rate,3.10%,3.10%,3.10%
+2024-12-20,2:00am,CNY,N/A,5-y Loan Prime Rate,3.60%,3.60%,3.60%
+2024-12-20,3:00am,NZD,Medium,Credit Card Spending y/y,-3.2%,,0.3%
+2024-12-20,8:00am,EUR,Medium,German PPI m/m,0.5%,0.3%,0.2%
+2024-12-20,8:00am,GBP,High,Retail Sales m/m,0.2%,0.5%,-0.7%
+2024-12-20,8:00am,GBP,Medium,Public Sector Net Borrowing,11.2B,15.5B,18.2B
+2024-12-20,12:00pm,GBP,Medium,CBI Realized Sales,-15,-9,-18
+2024-12-20,1:30pm,USD,Medium,FOMC Member Daly Speaks,,,
+2024-12-20,2:30pm,CAD,High,Core Retail Sales m/m,0.1%,0.2%,1.1%
+2024-12-20,2:30pm,CAD,High,Retail Sales m/m,0.6%,0.7%,0.6%
+2024-12-20,2:30pm,USD,High,Core PCE Price Index m/m,0.1%,0.2%,0.3%
+2024-12-20,2:30pm,USD,Medium,Personal Income m/m,0.3%,0.4%,0.7%
+2024-12-20,2:30pm,USD,Medium,Personal Spending m/m,0.4%,0.5%,0.3%
+2024-12-20,2:48pm,EUR,Medium,Belgian NBB Business Climate,-13.8,-11.7,-11.1
+2024-12-20,4:00pm,EUR,Medium,Consumer Confidence,-15,-14,-14
+2024-12-20,4:00pm,USD,N/A,Revised UoM Consumer Sentiment,74.0,74.1,74.0
+2024-12-20,4:00pm,USD,Medium,Revised UoM Inflation Expectations,2.8%,,2.9%
+2024-12-20,5:30pm,AUD,Medium,CB Leading Index m/m,0.2%,,0.2%
+2024-12-23,8:00am,EUR,Medium,German Import Prices m/m,0.9%,0.5%,0.6%
+2024-12-23,8:00am,GBP,Medium,Current Account,-18.1B,-22.9B,-24.0B
+2024-12-23,8:00am,GBP,Medium,Final GDP q/q,0.0%,0.1%,0.1%
+2024-12-23,8:00am,GBP,Medium,Revised Business Investment q/q,1.9%,1.2%,1.2%
+2024-12-23,10:00am,CHF,Medium,UBS Economic Expectations,-20.0,,-12.4
+2024-12-23,2:30pm,CAD,High,GDP m/m,0.3%,0.2%,0.2%
+2024-12-23,2:30pm,CAD,Medium,IPPI m/m,0.6%,0.3%,1.2%
+2024-12-23,2:30pm,CAD,Medium,RMPI m/m,-0.5%,0.4%,4.0%
+2024-12-23,2:30pm,USD,N/A,Core Durable Goods Orders m/m,-0.1%,0.3%,0.2%
+2024-12-23,2:30pm,USD,N/A,Durable Goods Orders m/m,-1.1%,-0.3%,0.3%
+2024-12-23,4:00pm,USD,N/A,CB Consumer Confidence,104.7,112.9,112.8
+2024-12-23,4:00pm,USD,N/A,New Home Sales,664K,666K,627K
+2024-12-23,7:30pm,CAD,Medium,BOC Summary of Deliberations,,,
+2024-12-24,12:50am,JPY,Medium,Monetary Policy Meeting Minutes,,,
+2024-12-24,1:30am,AUD,N/A,Monetary Policy Meeting Minutes,,,
+2024-12-24,5:59am,JPY,Medium,BOJ Core CPI y/y,1.7%,1.5%,1.5%
+2024-12-24,All Day,EUR,N/A,German Bank Holiday,,,
+2024-12-24,3:59pm,USD,N/A,Richmond Manufacturing Index,-10,-10,-14
+2024-12-24,All Day,NZD,N/A,Bank Holiday,,,
+2024-12-24,All Day,AUD,N/A,Bank Holiday,,,
+2024-12-25,12:50am,JPY,Medium,SPPI y/y,3.0%,3.0%,2.9%
+2024-12-25,5:17am,JPY,Medium,BOJ Gov Ueda Speaks,,,
+2024-12-25,All Day,CHF,N/A,Bank Holiday,,,
+2024-12-25,All Day,EUR,N/A,French Bank Holiday,,,
+2024-12-25,All Day,EUR,N/A,German Bank Holiday,,,
+2024-12-25,All Day,EUR,N/A,Italian Bank Holiday,,,
+2024-12-25,All Day,GBP,N/A,Bank Holiday,,,
+2024-12-25,All Day,CAD,N/A,Bank Holiday,,,
+2024-12-25,All Day,USD,N/A,Bank Holiday,,,
+2024-12-25,All Day,NZD,N/A,Bank Holiday,,,
+2024-12-25,All Day,AUD,N/A,Bank Holiday,,,
+2024-12-26,All Day,CHF,N/A,Bank Holiday,,,
+2024-12-26,All Day,EUR,N/A,German Bank Holiday,,,
+2024-12-26,All Day,EUR,N/A,Italian Bank Holiday,,,
+2024-12-26,All Day,GBP,N/A,Bank Holiday,,,
+2024-12-26,All Day,CAD,N/A,Bank Holiday,,,
+2024-12-26,2:30pm,USD,High,Unemployment Claims,219K,223K,220K
+2024-12-27,12:30am,JPY,N/A,Tokyo Core CPI y/y,2.4%,2.5%,2.2%
+2024-12-27,12:30am,JPY,Medium,Unemployment Rate,2.5%,2.5%,2.5%
+2024-12-27,12:50am,JPY,Medium,BOJ Summary of Opinions,,,
+2024-12-27,12:50am,JPY,Medium,Prelim Industrial Production m/m,-2.3%,-3.4%,2.8%
+2024-12-27,12:50am,JPY,Medium,Retail Sales y/y,2.8%,1.5%,1.3%
+2024-12-27,6:00am,JPY,Medium,Housing Starts y/y,-1.8%,-0.1%,-2.9%
+2024-12-27,2:30pm,USD,Medium,Goods Trade Balance,-102.9B,-101.3B,-98.3B
+2024-12-27,2:30pm,USD,Medium,Prelim Wholesale Inventories m/m,-0.2%,0.1%,0.1%
+2024-12-27,4:30pm,USD,Medium,Natural Gas Storage,-93B,-100B,-125B
+2024-12-27,7:00pm,USD,N/A,Crude Oil Inventories,-4.2M,-0.7M,-0.9M
+2024-12-30,1:30am,JPY,Medium,Final Manufacturing PMI,49.6,49.5,49.5
+2024-12-30,9:00am,CHF,Medium,KOF Economic Barometer,99.5,101.1,102.9
+2024-12-30,9:00am,EUR,N/A,Spanish Flash CPI y/y,2.8%,2.6%,2.4%
+2024-12-30,3:45pm,USD,N/A,Chicago PMI,36.9,42.7,40.2
+2024-12-30,4:00pm,USD,N/A,Pending Home Sales m/m,2.2%,0.9%,1.8%
+2024-12-31,All Day,JPY,N/A,Bank Holiday,,,
+2024-12-31,2:30am,CNY,High,Manufacturing PMI,50.1,50.3,50.3
+2024-12-31,2:30am,CNY,N/A,Non-Manufacturing PMI,52.2,50.2,50.0
+2024-12-31,All Day,EUR,N/A,German Bank Holiday,,,
+2024-12-31,3:00pm,USD,N/A,S&P/CS Composite-20 HPI y/y,4.2%,4.1%,4.6%
+2024-12-31,3:00pm,USD,Medium,HPI m/m,0.4%,0.5%,0.7%
+2024-12-31,All Day,NZD,N/A,Bank Holiday,,,
+2024-12-31,All Day,AUD,N/A,Bank Holiday,,,
+2025-01-01,All Day,JPY,N/A,Bank Holiday,,,
+2025-01-01,All Day,CNY,N/A,Bank Holiday,,,
+2025-01-01,All Day,CHF,N/A,Bank Holiday,,,
+2025-01-01,All Day,EUR,N/A,French Bank Holiday,,,
+2025-01-01,All Day,EUR,N/A,German Bank Holiday,,,
+2025-01-01,All Day,EUR,N/A,Italian Bank Holiday,,,
+2025-01-01,9:00am,GBP,N/A,Bank Holiday,,,
+2025-01-01,All Day,CAD,N/A,Bank Holiday,,,
+2025-01-01,All Day,USD,N/A,Bank Holiday,,,
+2025-01-01,All Day,NZD,N/A,Bank Holiday,,,
+2025-01-02,All Day,JPY,N/A,Bank Holiday,,,
+2025-01-02,2:45am,CNY,Medium,Caixin Manufacturing PMI,50.5,51.6,51.5
+2025-01-02,6:30am,AUD,Medium,Commodity Prices y/y,-10.7%,,-10.8%
+2025-01-02,All Day,CHF,N/A,Bank Holiday,,,
+2025-01-02,8:00am,GBP,Medium,Nationwide HPI m/m,0.7%,0.1%,1.2%
+2025-01-02,9:15am,EUR,Medium,Spanish Manufacturing PMI,53.3,53.6,53.1
+2025-01-02,9:45am,EUR,Medium,Italian Manufacturing PMI,46.2,44.9,44.5
+2025-01-02,9:50am,EUR,Medium,French Final Manufacturing PMI,41.9,41.9,41.9
+2025-01-02,9:55am,EUR,Medium,German Final Manufacturing PMI,42.5,42.5,42.5
+2025-01-02,10:00am,EUR,Medium,Final Manufacturing PMI,45.1,45.2,45.2
+2025-01-02,10:00am,EUR,Medium,M3 Money Supply y/y,3.8%,3.5%,3.4%
+2025-01-02,10:00am,EUR,Medium,Private Loans y/y,0.9%,0.9%,0.8%
+2025-01-02,10:30am,GBP,Medium,Final Manufacturing PMI,47.0,47.3,47.3
+2025-01-02,2:30pm,USD,High,Unemployment Claims,211K,222K,220K
+2025-01-02,3:30pm,CAD,Medium,Manufacturing PMI,52.2,,52.0
+2025-01-02,3:45pm,USD,N/A,Final Manufacturing PMI,49.4,48.3,48.3
+2025-01-02,4:00pm,USD,Medium,Construction Spending m/m,0.0%,0.3%,0.5%
+2025-01-02,5:00pm,USD,N/A,Crude Oil Inventories,-1.2M,-2.4M,-4.2M
+2025-01-03,All Day,JPY,N/A,Bank Holiday,,,
+2025-01-03,9:00am,EUR,Medium,Spanish Unemployment Change,-25.3K,-46.5K,-16.0K
+2025-01-03,9:30am,CHF,Medium,Manufacturing PMI,48.4,48.4,48.5
+2025-01-03,9:55am,EUR,Medium,German Unemployment Change,10K,15K,6K
+2025-01-03,10:30am,GBP,Medium,M4 Money Supply m/m,0.0%,0.1%,-0.2%
+2025-01-03,10:30am,GBP,Medium,Mortgage Approvals,66K,69K,68K
+2025-01-03,10:30am,GBP,Medium,Net Lending to Individuals m/m,3.4B,4.4B,4.5B
+2025-01-03,4:00pm,USD,High,ISM Manufacturing PMI,49.3,48.2,48.4
+2025-01-03,4:00pm,USD,N/A,ISM Manufacturing Prices,52.5,51.5,50.3
+2025-01-03,All Day,USD,Medium,Wards Total Vehicle Sales,16.8M,16.5M,16.5M
+2025-01-03,4:30pm,USD,Medium,Natural Gas Storage,-116B,-127B,-93B
+2025-01-03,5:00pm,USD,Medium,FOMC Member Barkin Speaks,,,
+2025-01-04,11:30pm,USD,Medium,FOMC Member Daly Speaks,,,
+2025-01-04,11:30pm,USD,Medium,FOMC Member Kugler Speaks,,,
+2025-01-05,7:15pm,USD,Medium,FOMC Member Daly Speaks,,,
+2025-01-06,2:45am,CNY,Medium,Caixin Services PMI,52.2,51.4,51.5
+2025-01-06,All Day,EUR,N/A,Italian Bank Holiday,,,
+2025-01-06,All Day,EUR,High,German Prelim CPI m/m,0.4%,0.3%,-0.2%
+2025-01-06,8:30am,CHF,Medium,Retail Sales y/y,0.8%,1.3%,1.5%
+2025-01-06,9:15am,EUR,Medium,Spanish Services PMI,57.3,54.1,53.1
+2025-01-06,9:45am,EUR,Medium,Italian Services PMI,50.7,50.0,49.2
+2025-01-06,9:50am,EUR,Medium,French Final Services PMI,49.3,48.2,48.2
+2025-01-06,9:55am,EUR,Medium,German Final Services PMI,51.2,51.0,51.0
+2025-01-06,10:00am,EUR,Medium,Final Services PMI,51.6,51.4,51.4
+2025-01-06,10:30am,EUR,Medium,Sentix Investor Confidence,-17.7,-17.7,-17.5
+2025-01-06,10:30am,GBP,Medium,Final Services PMI,51.1,51.4,51.4
+2025-01-06,3:30pm,USD,Medium,FOMC Member Cook Speaks,,,
+2025-01-06,3:45pm,USD,N/A,Final Services PMI,56.8,58.5,58.5
+2025-01-06,4:00pm,USD,Medium,Factory Orders m/m,-0.4%,-0.3%,0.5%
+2025-01-07,12:50am,JPY,Medium,Monetary Base y/y,-1.0%,-0.2%,-0.3%
+2025-01-07,1:01am,GBP,Medium,BRC Retail Sales Monitor y/y,3.1%,-0.2%,-3.4%
+2025-01-07,1:30am,AUD,Medium,Building Approvals m/m,-3.6%,-0.9%,5.2%
+2025-01-07,4:35am,JPY,Medium,10-y Bond Auction,1.14|3.4,,1.08|3.1
+2025-01-07,8:00am,GBP,Medium,Halifax HPI m/m,-0.2%,0.8%,1.2%
+2025-01-07,8:30am,CHF,High,CPI m/m,-0.1%,-0.1%,-0.1%
+2025-01-07,8:45am,EUR,Medium,French Prelim CPI m/m,0.2%,0.3%,-0.1%
+2025-01-07,10:00am,EUR,Medium,Italian Monthly Unemployment Rate,5.7%,5.8%,5.8%
+2025-01-07,10:30am,GBP,N/A,Construction PMI,53.3,54.3,55.2
+2025-01-07,10:30am,GBP,Medium,Housing Equity Withdrawal q/q,-12.5B,-11.5B,-15.2B
+2025-01-07,11:00am,EUR,N/A,Core CPI Flash Estimate y/y,2.7%,2.7%,2.7%
+2025-01-07,11:00am,EUR,N/A,CPI Flash Estimate y/y,2.4%,2.4%,2.2%
+2025-01-07,11:00am,EUR,Medium,Italian Prelim CPI m/m,0.1%,0.3%,0.0%
+2025-01-07,11:00am,EUR,Medium,Unemployment Rate,6.3%,6.3%,6.3%
+2025-01-07,11:02am,GBP,Medium,30-y Bond Auction,5.20|2.7,,4.83|3.1
+2025-01-07,2:00pm,USD,Medium,FOMC Member Barkin Speaks,,,
+2025-01-07,2:30pm,CAD,Medium,Trade Balance,-0.3B,-0.8B,-0.5B
+2025-01-07,2:30pm,USD,Medium,Trade Balance,-78.2B,-78.3B,-73.6B
+2025-01-07,3:54pm,NZD,Medium,GDT Price Index,-1.4%,,-2.8%
+2025-01-07,4:00pm,CAD,N/A,Ivey PMI,54.7,55.4,52.3
+2025-01-07,4:00pm,USD,High,ISM Services PMI,54.1,53.5,52.1
+2025-01-07,4:00pm,USD,High,JOLTS Job Openings,8.10M,7.73M,7.84M
+2025-01-07,7:01pm,USD,Medium,10-y Bond Auction,4.68|2.5,,4.24|2.7
+2025-01-08,1:00am,NZD,Medium,ANZ Commodity Prices m/m,0.2%,,2.9%
+2025-01-08,1:30am,AUD,High,CPI y/y,2.3%,2.2%,2.1%
+2025-01-08,6:00am,JPY,Medium,Consumer Confidence,36.2,36.6,36.4
+2025-01-08,8:00am,EUR,Medium,German Factory Orders m/m,-5.4%,-0.3%,-1.5%
+2025-01-08,8:00am,EUR,Medium,German Retail Sales m/m,-0.6%,0.5%,-0.3%
+2025-01-08,8:45am,EUR,Medium,French Trade Balance,-7.1B,-7.0B,-7.5B
+2025-01-08,11:00am,EUR,Medium,PPI m/m,1.6%,1.5%,0.4%
+2025-01-08,11:38am,EUR,Medium,German 10-y Bond Auction,2.51|2.1,,2.07|2.4
+2025-01-08,2:00pm,USD,N/A,FOMC Member Waller Speaks,,,
+2025-01-08,2:15pm,USD,High,ADP Non-Farm Employment Change,122K,139K,146K
+2025-01-08,2:30pm,USD,High,Unemployment Claims,201K,214K,211K
+2025-01-08,4:00pm,USD,Medium,Final Wholesale Inventories m/m,-0.2%,-0.2%,-0.2%
+2025-01-08,4:30pm,USD,N/A,Crude Oil Inventories,-1.0M,-1.8M,-1.2M
+2025-01-08,6:00pm,USD,Medium,Natural Gas Storage,-40B,-39B,-116B
+2025-01-08,7:01pm,USD,Medium,30-y Bond Auction,4.91|2.5,,4.54|2.4
+2025-01-08,8:00pm,USD,High,FOMC Meeting Minutes,,,
+2025-01-08,9:00pm,USD,Medium,Consumer Credit m/m,-7.5B,10.3B,17.3B
+2025-01-09,12:30am,JPY,Medium,Average Cash Earnings y/y,3.0%,2.7%,2.2%
+2025-01-09,1:01am,GBP,Medium,BRC Shop Price Index y/y,-1.0%,,-0.6%
+2025-01-09,1:30am,AUD,N/A,Retail Sales m/m,0.8%,1.0%,0.5%
+2025-01-09,1:30am,AUD,Medium,Goods Trade Balance,7.08B,5.62B,5.67B
+2025-01-09,2:30am,CNY,N/A,CPI y/y,0.1%,0.1%,0.2%
+2025-01-09,2:30am,CNY,N/A,PPI y/y,-2.3%,-2.4%,-2.5%
+2025-01-09,4:35am,JPY,Medium,30-y Bond Auction,2.30|3.7,,2.29|3.5
+2025-01-09,8:00am,EUR,Medium,German Industrial Production m/m,1.5%,0.5%,-0.4%
+2025-01-09,8:00am,EUR,Medium,German Trade Balance,19.7B,14.7B,13.4B
+2025-01-09,9:00am,CHF,Medium,Foreign Currency Reserves,731B,,725B
+2025-01-09,10:00am,EUR,Medium,ECB Economic Bulletin,,,
+2025-01-09,10:59am,EUR,Medium,French 10-y Bond Auction,3.40|2.0,,3.24|2.0
+2025-01-09,11:00am,EUR,Medium,Retail Sales m/m,0.1%,0.3%,-0.3%
+2025-01-09,1:30pm,USD,Medium,Challenger Job Cuts y/y,11.4%,,26.8%
+2025-01-09,3:00pm,USD,Medium,FOMC Member Collins Speaks,,,
+2025-01-09,3:00pm,USD,Medium,FOMC Member Harker Speaks,,,
+2025-01-09,5:00pm,GBP,Medium,MPC Member Breeden Speaks,,,
+2025-01-09,6:45pm,USD,Medium,FOMC Member Barkin Speaks,,,
+2025-01-09,7:30pm,USD,Medium,FOMC Member Schmid Speaks,,,
+2025-01-09,7:35pm,USD,Medium,FOMC Member Bowman Speaks,,,
+2025-01-10,12:30am,JPY,Medium,Household Spending y/y,-0.4%,-0.8%,-1.3%
+2025-01-10,6:00am,JPY,Medium,Leading Indicators,107.0%,107.2%,109.1%
+2025-01-10,7:45am,CHF,Medium,Unemployment Rate,2.6%,2.7%,2.6%
+2025-01-10,8:45am,EUR,Medium,French Consumer Spending m/m,0.3%,0.1%,-0.3%
+2025-01-10,8:45am,EUR,Medium,French Industrial Production m/m,0.2%,-0.1%,-0.3%
+2025-01-10,10:00am,EUR,Medium,Italian Retail Sales m/m,-0.4%,0.2%,-0.5%
+2025-01-10,2:30pm,CAD,High,Employment Change,90.9K,24.9K,50.5K
+2025-01-10,2:30pm,CAD,High,Unemployment Rate,6.7%,6.9%,6.8%
+2025-01-10,2:30pm,CAD,Medium,Building Permits m/m,-5.9%,1.3%,-4.1%
+2025-01-10,2:30pm,USD,High,Average Hourly Earnings m/m,0.3%,0.3%,0.4%
+2025-01-10,2:30pm,USD,High,Non-Farm Employment Change,256K,164K,212K
+2025-01-10,2:30pm,USD,High,Unemployment Rate,4.1%,4.2%,4.2%
+2025-01-10,4:00pm,USD,N/A,Prelim UoM Consumer Sentiment,73.2,74.0,74.0
+2025-01-10,4:00pm,USD,N/A,Prelim UoM Inflation Expectations,3.3%,,2.8%
+2025-01-10,4:05pm,USD,Medium,FOMC Member Goolsbee Speaks,,,
+2025-01-12,10:45pm,NZD,Medium,Building Consents m/m,5.3%,,-5.2%
+2025-01-13,1:00am,AUD,Medium,MI Inflation Gauge m/m,0.6%,,0.2%
+2025-01-13,All Day,JPY,N/A,Bank Holiday,,,
+2025-01-13,1:30am,AUD,Medium,ANZ Job Advertisements m/m,0.3%,,-1.8%
+2025-01-13,4:02am,CNY,Medium,Trade Balance,753B,730B,693B
+2025-01-13,4:03am,CNY,Medium,USD-Denominated Trade Balance,104.8B,100.0B,97.4B
+2025-01-13,9:00am,CHF,Medium,SECO Consumer Climate,-30,-38,-37
+2025-01-13,10:00pm,NZD,Medium,NZIER Business Confidence,16,,-1
+2025-01-14,12:30am,AUD,Medium,Westpac Consumer Sentiment,-0.7%,,-2.0%
+2025-01-14,12:50am,JPY,Medium,Bank Lending y/y,3.1%,3.1%,2.9%
+2025-01-14,12:50am,JPY,Medium,Current Account,3.03T,2.59T,2.41T
+2025-01-14,6:00am,JPY,Medium,Economy Watchers Sentiment,49.9,49.4,49.4
+2025-01-14,8:05am,CNY,Medium,M2 Money Supply y/y,7.3%,7.3%,7.1%
+2025-01-14,8:09am,CNY,N/A,New Loans,990B,890B,580B
+2025-01-14,8:45am,EUR,Medium,French Gov Budget Balance,-172.5B,,-157.4B
+2025-01-14,9:30am,GBP,Medium,MPC Member Breeden Speaks,,,
+2025-01-14,10:00am,EUR,Medium,Italian Industrial Production m/m,0.3%,0.0%,0.1%
+2025-01-14,12:00pm,USD,Medium,NFIB Small Business Index,105.1,101.3,101.7
+2025-01-14,2:30pm,USD,High,Core PPI m/m,0.0%,0.2%,0.2%
+2025-01-14,2:30pm,USD,High,PPI m/m,0.2%,0.4%,0.4%
+2025-01-14,4:00pm,USD,Medium,FOMC Member Schmid Speaks,,,
+2025-01-14,4:06pm,USD,Medium,RCM/TIPP Economic Optimism,51.9,55.1,54.0
+2025-01-14,8:00pm,USD,Medium,Federal Budget Balance,-86.7B,-77.6B,-366.8B
+2025-01-14,9:00pm,USD,Medium,FOMC Member Williams Speaks,,,
+2025-01-15,12:50am,JPY,Medium,M2 Money Stock y/y,1.3%,1.2%,1.2%
+2025-01-15,6:58am,JPY,Medium,Prelim Machine Tool Orders y/y,11.2%,,3.0%
+2025-01-15,8:00am,EUR,Medium,German WPI m/m,0.1%,0.1%,0.0%
+2025-01-15,8:00am,GBP,High,CPI y/y,2.5%,2.6%,2.6%
+2025-01-15,8:00am,GBP,Medium,Core CPI y/y,3.2%,3.4%,3.5%
+2025-01-15,8:00am,GBP,Medium,PPI Input m/m,0.1%,0.2%,0.0%
+2025-01-15,8:00am,GBP,Medium,PPI Output m/m,0.1%,0.1%,0.4%
+2025-01-15,8:00am,GBP,Medium,RPI y/y,3.5%,3.8%,3.6%
+2025-01-15,8:45am,EUR,Medium,French Final CPI m/m,0.2%,0.2%,0.2%
+2025-01-15,10:30am,GBP,Medium,HPI y/y,3.3%,3.5%,3.4%
+2025-01-15,11:00am,EUR,Medium,Industrial Production m/m,0.2%,0.3%,0.2%
+2025-01-15,11:02am,GBP,Medium,10-y Bond Auction,4.81|2.8,,4.33|2.9
+2025-01-15,11:34am,EUR,Medium,German 30-y Bond Auction,2.84|2.8,,2.55|3.6
+2025-01-15,2:30pm,CAD,Medium,Manufacturing Sales m/m,0.8%,0.4%,2.1%
+2025-01-15,2:30pm,CAD,Medium,Wholesale Sales m/m,-0.2%,-0.6%,1.3%
+2025-01-15,2:30pm,USD,High,Core CPI m/m,0.2%,0.3%,0.3%
+2025-01-15,2:30pm,USD,High,CPI m/m,0.4%,0.4%,0.3%
+2025-01-15,2:30pm,USD,High,CPI y/y,2.9%,2.9%,2.7%
+2025-01-15,2:30pm,USD,N/A,Empire State Manufacturing Index,-12.6,2.7,0.2
+2025-01-15,3:20pm,USD,Medium,FOMC Member Barkin Speaks,,,
+2025-01-15,4:00pm,USD,Medium,FOMC Member Kashkari Speaks,,,
+2025-01-15,4:30pm,USD,N/A,Crude Oil Inventories,-2.0M,-1.0M,-1.0M
+2025-01-15,5:00pm,USD,Medium,FOMC Member Williams Speaks,,,
+2025-01-15,5:30pm,GBP,Medium,MPC Member Taylor Speaks,,,
+2025-01-15,6:00pm,USD,Medium,FOMC Member Goolsbee Speaks,,,
+2025-01-15,8:00pm,USD,Medium,Beige Book,,,
+2025-01-15,10:45pm,NZD,Medium,FPI m/m,0.1%,,-0.1%
+2025-01-16,12:50am,JPY,Medium,PPI y/y,3.8%,3.8%,3.8%
+2025-01-16,1:00am,AUD,Medium,MI Inflation Expectations,4.0%,,4.2%
+2025-01-16,1:01am,GBP,Medium,RICS House Price Balance,28%,28%,24%
+2025-01-16,1:30am,AUD,High,Employment Change,56.3K,14.5K,28.2K
+2025-01-16,1:30am,AUD,High,Unemployment Rate,4.0%,4.0%,3.9%
+2025-01-16,8:00am,EUR,Medium,German Final CPI m/m,0.5%,0.4%,0.4%
+2025-01-16,8:00am,GBP,High,GDP m/m,0.1%,0.2%,-0.1%
+2025-01-16,8:00am,GBP,Medium,Construction Output m/m,0.4%,0.4%,-0.3%
+2025-01-16,8:00am,GBP,Medium,Goods Trade Balance,-19.3B,-18.0B,-19.3B
+2025-01-16,8:00am,GBP,Medium,Index of Services 3m/3m,0.0%,0.1%,0.0%
+2025-01-16,8:00am,GBP,Medium,Industrial Production m/m,-0.4%,0.1%,-0.6%
+2025-01-16,8:00am,GBP,Medium,Manufacturing Production m/m,-0.3%,-0.2%,-0.6%
+2025-01-16,10:30am,GBP,Medium,BOE Credit Conditions Survey,,,
+2025-01-16,11:00am,EUR,Medium,Italian Trade Balance,4.22B,4.50B,5.07B
+2025-01-16,11:00am,EUR,Medium,Trade Balance,12.9B,11.8B,7.0B
+2025-01-16,1:30pm,EUR,Medium,ECB Monetary Policy Meeting Accounts,,,
+2025-01-16,1:45pm,GBP,Medium,NIESR GDP Estimate,0.0%,,0.0%
+2025-01-16,2:15pm,CAD,Medium,Housing Starts,231K,252K,267K
+2025-01-16,2:30pm,USD,High,Core Retail Sales m/m,0.4%,0.5%,0.2%
+2025-01-16,2:30pm,USD,High,Retail Sales m/m,0.4%,0.6%,0.8%
+2025-01-16,2:30pm,USD,High,Unemployment Claims,217K,210K,203K
+2025-01-16,2:30pm,USD,N/A,Philly Fed Manufacturing Index,44.3,-5.2,-16.4
+2025-01-16,2:30pm,USD,Medium,Import Prices m/m,0.1%,-0.1%,0.1%
+2025-01-16,4:00pm,USD,Medium,Business Inventories m/m,0.1%,0.1%,0.0%
+2025-01-16,4:00pm,USD,Medium,NAHB Housing Market Index,47,45,46
+2025-01-16,4:30pm,AUD,Medium,CB Leading Index m/m,0.7%,,0.1%
+2025-01-16,4:30pm,USD,Medium,Natural Gas Storage,-258B,-260B,-40B
+2025-01-16,6:30pm,CAD,Medium,Gov Council Member Gravelle Speaks,,,
+2025-01-16,10:30pm,NZD,Medium,BusinessNZ Manufacturing Index,45.9,,45.2
+2025-01-17,2:30am,CNY,Medium,New Home Prices m/m,-0.08%,,-0.20%
+2025-01-17,3:00am,CNY,N/A,GDP q/y,5.4%,5.0%,4.6%
+2025-01-17,3:00am,CNY,N/A,Industrial Production y/y,6.2%,5.4%,5.4%
+2025-01-17,3:00am,CNY,N/A,Retail Sales y/y,3.7%,3.5%,3.0%
+2025-01-17,3:00am,CNY,Medium,Fixed Asset Investment ytd/y,3.2%,3.3%,3.3%
+2025-01-17,3:00am,CNY,Medium,NBS Press Conference,,,
+2025-01-17,3:00am,CNY,Medium,Unemployment Rate,5.1%,5.0%,5.0%
+2025-01-17,8:00am,GBP,High,Retail Sales m/m,-0.3%,0.4%,0.1%
+2025-01-17,10:00am,EUR,Medium,Current Account,27.0B,28.0B,30.2B
+2025-01-17,10:03am,CNY,Medium,Foreign Direct Investment ytd/y,-27.1%,,-27.9%
+2025-01-17,11:00am,EUR,Medium,Final Core CPI y/y,2.7%,2.7%,2.7%
+2025-01-17,11:00am,EUR,Medium,Final CPI y/y,2.4%,2.4%,2.4%
+2025-01-17,2:30pm,CAD,Medium,Foreign Securities Purchases,16.40B,14.50B,21.55B
+2025-01-17,2:30pm,USD,N/A,Building Permits,1.48M,1.46M,1.49M
+2025-01-17,2:30pm,USD,Medium,Housing Starts,1.50M,1.33M,1.29M
+2025-01-17,3:15pm,USD,Medium,Capacity Utilization Rate,77.6%,77.0%,77.0%
+2025-01-17,3:15pm,USD,Medium,Industrial Production m/m,0.9%,0.3%,0.2%
+2025-01-17,3:30pm,GBP,Medium,CB Leading Index m/m,-0.3%,,0.1%
+2025-01-17,10:00pm,USD,Medium,TIC Long-Term Purchases,79.0B,159.9B,159.1B
+2025-01-20,12:50am,JPY,Medium,Core Machinery Orders m/m,3.4%,-0.7%,2.1%
+2025-01-20,1:01am,GBP,Medium,Rightmove HPI m/m,1.7%,,-1.7%
+2025-01-20,2:00am,CNY,N/A,1-y Loan Prime Rate,3.10%,3.10%,3.10%
+2025-01-20,2:00am,CNY,N/A,5-y Loan Prime Rate,3.60%,3.60%,3.60%
+2025-01-20,5:30am,JPY,Medium,Revised Industrial Production m/m,-2.2%,-2.3%,-2.3%
+2025-01-20,5:30am,JPY,Medium,Tertiary Industry Activity m/m,-0.3%,0.1%,0.1%
+2025-01-20,8:00am,EUR,Medium,German PPI m/m,-0.1%,0.3%,0.5%
+2025-01-20,8:30am,CHF,Medium,PPI m/m,0.0%,0.2%,-0.6%
+2025-01-20,Day 1,All,N/A,WEF Annual Meetings,,,
+2025-01-20,All Day,EUR,Medium,Eurogroup Meetings,,,
+2025-01-20,All Day,USD,N/A,Bank Holiday,,,
+2025-01-20,4:30pm,CAD,Medium,BOC Business Outlook Survey,,,
+2025-01-20,6:00pm,USD,High,President Trump Speaks,,,
+2025-01-20,10:30pm,NZD,Medium,BusinessNZ Services Index,47.9,,49.5
+2025-01-21,8:00am,GBP,High,Claimant Count Change,0.7K,10.3K,-25.1K
+2025-01-21,8:00am,GBP,N/A,Average Earnings Index 3m/y,5.6%,5.6%,5.2%
+2025-01-21,8:00am,GBP,Medium,Unemployment Rate,4.4%,4.3%,4.3%
+2025-01-21,Day 2,All,N/A,WEF Annual Meetings,,,
+2025-01-21,11:00am,EUR,N/A,German ZEW Economic Sentiment,10.3,15.2,15.7
+2025-01-21,11:00am,EUR,Medium,ZEW Economic Sentiment,18.0,16.9,17.0
+2025-01-21,All Day,EUR,Medium,ECOFIN Meetings,,,
+2025-01-21,2:30pm,CAD,High,CPI m/m,-0.4%,-0.7%,0.0%
+2025-01-21,2:30pm,CAD,High,Median CPI y/y,2.4%,2.5%,2.6%
+2025-01-21,2:30pm,CAD,High,Trimmed CPI y/y,2.5%,2.5%,2.6%
+2025-01-21,2:30pm,CAD,N/A,Common CPI y/y,2.0%,1.9%,2.0%
+2025-01-21,2:30pm,CAD,Medium,Core CPI m/m,-0.3%,,-0.1%
+2025-01-21,3:57pm,NZD,Medium,GDT Price Index,1.4%,,-1.4%
+2025-01-21,10:45pm,NZD,High,CPI q/q,0.5%,0.5%,0.6%
+2025-01-22,12:30am,AUD,Medium,MI Leading Index m/m,0.0%,,0.1%
+2025-01-22,8:00am,GBP,Medium,Public Sector Net Borrowing,17.8B,14.2B,11.8B
+2025-01-22,Day 3,All,N/A,WEF Annual Meetings,,,
+2025-01-22,12:00pm,EUR,Medium,German Buba Monthly Report,,,
+2025-01-22,2:30pm,CAD,Medium,IPPI m/m,0.2%,0.5%,0.6%
+2025-01-22,2:30pm,CAD,Medium,RMPI m/m,1.3%,0.4%,-0.1%
+2025-01-22,4:00pm,USD,Medium,CB Leading Index m/m,-0.1%,-0.1%,0.4%
+2025-01-22,4:15pm,EUR,N/A,ECB President Lagarde Speaks,,,
+2025-01-22,10:45pm,NZD,Medium,Visitor Arrivals m/m,1.0%,,0.0%
+2025-01-23,12:50am,JPY,Medium,Trade Balance,-0.03T,-0.51T,-0.39T
+2025-01-23,Day 4,All,N/A,WEF Annual Meetings,,,
+2025-01-23,12:00pm,GBP,Medium,CBI Industrial Order Expectations,-34,-35,-40
+2025-01-23,2:30pm,CAD,High,Core Retail Sales m/m,-0.7%,0.1%,-0.1%
+2025-01-23,2:30pm,CAD,High,Retail Sales m/m,0.0%,0.2%,0.6%
+2025-01-23,2:30pm,USD,High,Unemployment Claims,223K,221K,217K
+2025-01-23,4:00pm,EUR,Medium,Consumer Confidence,-14,-14,-15
+2025-01-23,4:30pm,USD,Medium,Natural Gas Storage,-223B,-270B,-258B
+2025-01-23,5:00pm,USD,High,President Trump Speaks,,,
+2025-01-23,6:00pm,USD,N/A,Crude Oil Inventories,-1.0M,-0.1M,-2.0M
+2025-01-23,11:00pm,AUD,Medium,Flash Manufacturing PMI,49.8,,47.8
+2025-01-23,11:00pm,AUD,Medium,Flash Services PMI,50.4,,50.8
+2025-01-24,12:30am,JPY,Medium,National Core CPI y/y,3.0%,3.0%,2.7%
+2025-01-24,1:01am,GBP,Medium,GfK Consumer Confidence,-22,-18,-17
+2025-01-24,1:30am,JPY,Medium,Flash Manufacturing PMI,48.8,,49.6
+2025-01-24,3:00am,NZD,Medium,Credit Card Spending y/y,-1.4%,,-3.1%
+2025-01-24,4:23am,JPY,High,BOJ Outlook Report,,,
+2025-01-24,4:23am,JPY,High,BOJ Policy Rate,<0.50%,<0.50%,<0.25%
+2025-01-24,4:23am,JPY,High,Monetary Policy Statement,,,
+2025-01-24,7:30am,JPY,High,BOJ Press Conference,,,
+2025-01-24,9:15am,EUR,High,French Flash Manufacturing PMI,45.3,42.4,41.9
+2025-01-24,9:15am,EUR,High,French Flash Services PMI,48.9,49.3,49.3
+2025-01-24,9:30am,EUR,High,German Flash Manufacturing PMI,44.1,42.7,42.5
+2025-01-24,9:30am,EUR,High,German Flash Services PMI,52.5,51.1,51.2
+2025-01-24,10:00am,EUR,N/A,Flash Manufacturing PMI,46.1,45.6,45.1
+2025-01-24,10:00am,EUR,N/A,Flash Services PMI,51.4,51.4,51.6
+2025-01-24,Day 5,All,N/A,WEF Annual Meetings,,,
+2025-01-24,10:30am,GBP,High,Flash Manufacturing PMI,48.2,46.9,47.0
+2025-01-24,10:30am,GBP,High,Flash Services PMI,51.2,50.8,51.1
+2025-01-24,11:00am,EUR,N/A,ECB President Lagarde Speaks,,,
+2025-01-24,12:00pm,GBP,Medium,CBI Realized Sales,-24,-11,-15
+2025-01-24,2:30pm,CAD,Medium,NHPI m/m,-0.1%,0.2%,0.1%
+2025-01-24,3:45pm,USD,High,Flash Manufacturing PMI,50.1,49.8,49.4
+2025-01-24,3:45pm,USD,High,Flash Services PMI,52.8,56.4,56.8
+2025-01-24,4:00pm,USD,N/A,Existing Home Sales,4.24M,4.19M,4.15M
+2025-01-24,4:00pm,USD,N/A,Revised UoM Consumer Sentiment,71.1,73.3,73.2
+2025-01-24,4:00pm,USD,Medium,Revised UoM Inflation Expectations,3.3%,,3.3%
+2025-01-26,All Day,AUD,N/A,Bank Holiday,,,
+2025-01-27,2:30am,CNY,High,Manufacturing PMI,49.1,50.1,50.1
+2025-01-27,2:30am,CNY,N/A,Non-Manufacturing PMI,50.2,52.1,52.2
+2025-01-27,9:10am,EUR,N/A,ECB President Lagarde Speaks,,,
+2025-01-27,10:00am,EUR,N/A,German ifo Business Climate,85.1,84.9,84.7
+2025-01-27,2:58pm,EUR,Medium,Belgian NBB Business Climate,-13.6,-10.3,-13.8
+2025-01-27,3:00pm,CNY,Medium,CB Leading Index m/m,-0.1%,,-0.5%
+2025-01-27,4:00pm,USD,N/A,New Home Sales,698K,669K,674K
+2025-01-27,10:25pm,CHF,High,SNB Chairman Schlegel Speaks,,,
+2025-01-28,12:50am,JPY,Medium,SPPI y/y,2.9%,3.2%,3.0%
+2025-01-28,1:01am,GBP,Medium,BRC Shop Price Index y/y,-0.7%,,-1.0%
+2025-01-28,1:30am,AUD,Medium,NAB Business Confidence,-2,,-3
+2025-01-28,All Day,CNY,N/A,Bank Holiday,,,
+2025-01-28,6:00am,JPY,Medium,BOJ Core CPI y/y,1.9%,1.7%,1.7%
+2025-01-28,9:00am,EUR,Medium,Spanish Unemployment Rate,10.6%,11.1%,11.2%
+2025-01-28,2:30pm,USD,N/A,Core Durable Goods Orders m/m,0.3%,0.4%,-0.2%
+2025-01-28,2:30pm,USD,N/A,Durable Goods Orders m/m,-2.2%,0.3%,-1.2%
+2025-01-28,3:00pm,USD,N/A,S&P/CS Composite-20 HPI y/y,4.3%,4.2%,4.2%
+2025-01-28,3:00pm,USD,Medium,HPI m/m,0.3%,0.4%,0.5%
+2025-01-28,3:59pm,USD,N/A,Richmond Manufacturing Index,-4,-13,-10
+2025-01-28,4:00pm,USD,High,CB Consumer Confidence,104.1,105.7,109.5
+2025-01-29,12:50am,JPY,Medium,Monetary Policy Meeting Minutes,,,
+2025-01-29,1:30am,AUD,High,CPI q/q,0.2%,0.3%,0.2%
+2025-01-29,1:30am,AUD,High,CPI y/y,2.5%,2.5%,2.3%
+2025-01-29,1:30am,AUD,High,Trimmed Mean CPI q/q,0.5%,0.6%,0.8%
+2025-01-29,All Day,CNY,N/A,Bank Holiday,,,
+2025-01-29,6:00am,JPY,Medium,Consumer Confidence,35.2,36.6,36.2
+2025-01-29,8:00am,EUR,Medium,German GfK Consumer Climate,-22.4,-20.5,-21.4
+2025-01-29,9:00am,EUR,Medium,Spanish Flash GDP q/q,0.8%,0.6%,0.8%
+2025-01-29,10:00am,CHF,Medium,UBS Economic Expectations,17.7,,-20.0
+2025-01-29,10:00am,EUR,Medium,M3 Money Supply y/y,3.5%,3.9%,3.8%
+2025-01-29,10:00am,EUR,Medium,Private Loans y/y,1.1%,1.0%,0.9%
+2025-01-29,11:31am,EUR,Medium,German 10-y Bond Auction,2.54|2.8,,2.51|2.1
+2025-01-29,2:30pm,USD,Medium,Goods Trade Balance,-122.1B,-105.6B,-103.5B
+2025-01-29,2:30pm,USD,Medium,Prelim Wholesale Inventories m/m,-0.5%,0.2%,-0.1%
+2025-01-29,3:15pm,GBP,High,BOE Gov Bailey Speaks,,,
+2025-01-29,3:45pm,CAD,High,BOC Monetary Policy Report,,,
+2025-01-29,3:45pm,CAD,High,BOC Rate Statement,,,
+2025-01-29,3:45pm,CAD,High,Overnight Rate,3.00%,3.00%,3.25%
+2025-01-29,4:30pm,CAD,High,BOC Press Conference,,,
+2025-01-29,4:30pm,USD,N/A,Crude Oil Inventories,3.5M,2.2M,-1.0M
+2025-01-29,8:00pm,USD,High,Federal Funds Rate,4.50%,4.50%,4.50%
+2025-01-29,8:00pm,USD,High,FOMC Statement,,,
+2025-01-29,8:30pm,USD,High,FOMC Press Conference,,,
+2025-01-29,10:45pm,NZD,Medium,Trade Balance,219M,-1363M,-435M
+2025-01-30,1:00am,NZD,Medium,ANZ Business Confidence,54.4,,62.3
+2025-01-30,1:30am,AUD,Medium,Import Prices q/q,0.2%,1.5%,-1.4%
+2025-01-30,1:30am,AUD,Medium,RBA Bulletin,,,
+2025-01-30,All Day,CNY,N/A,Bank Holiday,,,
+2025-01-30,7:30am,EUR,Medium,French Consumer Spending m/m,0.7%,0.1%,0.2%
+2025-01-30,7:30am,EUR,Medium,French Flash GDP q/q,-0.1%,0.0%,0.4%
+2025-01-30,8:00am,CHF,Medium,Trade Balance,3.49B,4.50B,6.11B
+2025-01-30,8:00am,EUR,Medium,German Import Prices m/m,0.4%,0.5%,0.9%
+2025-01-30,9:00am,CHF,Medium,KOF Economic Barometer,101.6,100.3,99.6
+2025-01-30,9:00am,EUR,N/A,Spanish Flash CPI y/y,3.0%,2.9%,2.8%
+2025-01-30,10:00am,EUR,Medium,Italian Prelim GDP q/q,0.0%,0.1%,0.0%
+2025-01-30,10:00am,EUR,Medium,German Prelim GDP q/q,-0.2%,-0.1%,0.1%
+2025-01-30,10:30am,GBP,Medium,M4 Money Supply m/m,0.1%,0.2%,0.0%
+2025-01-30,10:30am,GBP,Medium,Mortgage Approvals,67K,65K,66K
+2025-01-30,10:30am,GBP,Medium,Net Lending to Individuals m/m,4.6B,3.6B,3.5B
+2025-01-30,11:00am,EUR,Medium,Italian Monthly Unemployment Rate,6.2%,5.7%,5.9%
+2025-01-30,11:00am,EUR,Medium,Prelim Flash GDP q/q,0.0%,0.1%,0.4%
+2025-01-30,11:00am,EUR,Medium,Unemployment Rate,6.3%,6.3%,6.2%
+2025-01-30,11:23am,EUR,Medium,Italian 10-y Bond Auction,3.60|1.8,,3.19|2.1
+2025-01-30,2:15pm,EUR,High,Main Refinancing Rate,2.90%,2.90%,3.15%
+2025-01-30,2:15pm,EUR,High,Monetary Policy Statement,,,
+2025-01-30,2:30pm,USD,High,Advance GDP q/q,2.3%,2.7%,3.1%
+2025-01-30,2:30pm,USD,High,Unemployment Claims,207K,224K,223K
+2025-01-30,2:30pm,USD,N/A,Advance GDP Price Index q/q,2.2%,2.5%,1.9%
+2025-01-30,2:45pm,EUR,High,ECB Press Conference,,,
+2025-01-30,4:00pm,USD,N/A,Pending Home Sales m/m,-5.5%,0.0%,1.6%
+2025-01-30,4:30pm,USD,Medium,Natural Gas Storage,-321B,-317B,-223B
+2025-01-31,12:30am,JPY,N/A,Tokyo Core CPI y/y,2.5%,2.5%,2.4%
+2025-01-31,12:30am,JPY,Medium,Unemployment Rate,2.4%,2.5%,2.5%
+2025-01-31,12:50am,JPY,Medium,Prelim Industrial Production m/m,0.3%,-0.1%,-2.2%
+2025-01-31,12:50am,JPY,Medium,Retail Sales y/y,3.7%,3.4%,2.8%
+2025-01-31,1:30am,AUD,Medium,PPI q/q,0.8%,1.0%,0.9%
+2025-01-31,1:30am,AUD,Medium,Private Sector Credit m/m,0.6%,0.5%,0.6%
+2025-01-31,All Day,CNY,N/A,Bank Holiday,,,
+2025-01-31,6:00am,JPY,Medium,Housing Starts y/y,-2.5%,-3.7%,-1.8%
+2025-01-31,8:00am,EUR,Medium,German Retail Sales m/m,-1.6%,0.0%,0.0%
+2025-01-31,8:00am,GBP,Medium,Nationwide HPI m/m,0.1%,0.3%,0.7%
+2025-01-31,All Day,EUR,High,German Prelim CPI m/m,-0.2%,0.1%,0.5%
+2025-01-31,8:30am,CHF,Medium,Retail Sales y/y,2.6%,0.6%,1.4%
+2025-01-31,8:45am,EUR,Medium,French Prelim CPI m/m,-0.1%,0.0%,0.2%
+2025-01-31,9:55am,EUR,Medium,German Unemployment Change,11K,14K,10K
+2025-01-31,2:30pm,CAD,High,GDP m/m,-0.2%,-0.1%,0.3%
+2025-01-31,2:30pm,USD,High,Core PCE Price Index m/m,0.2%,0.2%,0.1%
+2025-01-31,2:30pm,USD,High,Employment Cost Index q/q,0.9%,0.9%,0.8%
+2025-01-31,2:30pm,USD,Medium,FOMC Member Bowman Speaks,,,
+2025-01-31,2:30pm,USD,Medium,Personal Income m/m,0.4%,0.4%,0.3%
+2025-01-31,2:30pm,USD,Medium,Personal Spending m/m,0.7%,0.5%,0.6%
+2025-01-31,3:45pm,USD,N/A,Chicago PMI,39.5,40.3,36.9
+2025-01-31,4:05pm,USD,Medium,FOMC Member Goolsbee Speaks,,,
+2025-02-03,12:50am,JPY,Medium,BOJ Summary of Opinions,,,
+2025-02-03,1:00am,AUD,Medium,MI Inflation Gauge m/m,0.1%,,0.6%
+2025-02-03,1:30am,AUD,N/A,Retail Sales m/m,-0.1%,-0.7%,0.7%
+2025-02-03,1:30am,AUD,Medium,ANZ Job Advertisements m/m,0.2%,,0.3%
+2025-02-03,1:30am,AUD,Medium,Building Approvals m/m,0.7%,0.9%,-3.4%
+2025-02-03,1:30am,JPY,Medium,Final Manufacturing PMI,48.7,48.8,48.8
+2025-02-03,All Day,CNY,N/A,Bank Holiday,,,
+2025-02-03,2:45am,CNY,Medium,Caixin Manufacturing PMI,50.1,50.6,50.5
+2025-02-03,6:30am,AUD,Medium,Commodity Prices y/y,-11.9%,,-10.4%
+2025-02-03,9:15am,EUR,Medium,Spanish Manufacturing PMI,50.9,53.5,53.3
+2025-02-03,9:30am,CHF,Medium,Manufacturing PMI,47.5,49.0,48.4
+2025-02-03,9:45am,EUR,Medium,Italian Manufacturing PMI,46.3,46.8,46.2
+2025-02-03,9:50am,EUR,Medium,French Final Manufacturing PMI,45.0,45.3,45.3
+2025-02-03,9:55am,EUR,Medium,German Final Manufacturing PMI,45.0,44.1,44.1
+2025-02-03,10:00am,EUR,Medium,Final Manufacturing PMI,46.6,46.1,46.1
+2025-02-03,10:30am,GBP,Medium,Final Manufacturing PMI,48.3,48.2,48.2
+2025-02-03,11:00am,EUR,N/A,Core CPI Flash Estimate y/y,2.7%,2.6%,2.7%
+2025-02-03,11:00am,EUR,N/A,CPI Flash Estimate y/y,2.5%,2.4%,2.4%
+2025-02-03,11:00am,EUR,Medium,Italian Prelim CPI m/m,0.6%,0.4%,0.1%
+2025-02-03,All Day,All,N/A,OPEC-JMMC Meetings,,,
+2025-02-03,3:30pm,CAD,Medium,Manufacturing PMI,51.6,,52.2
+2025-02-03,3:45pm,USD,N/A,Final Manufacturing PMI,51.2,50.1,50.1
+2025-02-03,4:00pm,USD,High,ISM Manufacturing PMI,50.9,49.3,49.3
+2025-02-03,4:00pm,USD,N/A,ISM Manufacturing Prices,54.9,52.6,52.5
+2025-02-03,4:00pm,USD,Medium,Construction Spending m/m,0.5%,0.3%,0.2%
+2025-02-03,All Day,USD,Medium,Wards Total Vehicle Sales,15.6M,16.0M,16.8M
+2025-02-03,6:30pm,USD,Medium,FOMC Member Bostic Speaks,,,
+2025-02-03,8:00pm,USD,Medium,Loan Officer Survey,,,
+2025-02-03,10:45pm,NZD,Medium,Building Consents m/m,-5.6%,,4.9%
+2025-02-04,12:30am,USD,Medium,FOMC Member Musalem Speaks,,,
+2025-02-04,12:50am,JPY,Medium,Monetary Base y/y,-2.5%,-0.5%,-1.0%
+2025-02-04,4:35am,JPY,Medium,10-y Bond Auction,1.26|3.2,,1.14|3.4
+2025-02-04,8:45am,EUR,Medium,French Gov Budget Balance,-156.3B,,-172.5B
+2025-02-04,9:00am,EUR,Medium,Spanish Unemployment Change,38.7K,55.4K,-25.3K
+2025-02-04,4:00pm,USD,High,JOLTS Job Openings,7.60M,8.01M,8.16M
+2025-02-04,4:00pm,USD,Medium,Factory Orders m/m,-0.9%,-0.7%,-0.8%
+2025-02-04,4:02pm,NZD,Medium,GDT Price Index,3.7%,,1.4%
+2025-02-04,4:07pm,USD,Medium,RCM/TIPP Economic Optimism,52.0,53.0,51.9
+2025-02-04,5:00pm,USD,Medium,FOMC Member Bostic Speaks,,,
+2025-02-04,8:00pm,USD,Medium,FOMC Member Daly Speaks,,,
+2025-02-04,10:45pm,NZD,High,Employment Change q/q,-0.1%,-0.2%,-0.6%
+2025-02-04,10:45pm,NZD,High,Unemployment Rate,5.1%,5.1%,4.8%
+2025-02-04,10:45pm,NZD,Medium,Labor Cost Index q/q,0.6%,0.6%,0.6%
+2025-02-04,11:10pm,USD,High,President Trump Speaks,,,
+2025-02-05,12:30am,JPY,Medium,Average Cash Earnings y/y,4.8%,3.6%,3.9%
+2025-02-05,1:00am,NZD,Medium,ANZ Commodity Prices m/m,1.8%,,0.1%
+2025-02-05,1:30am,USD,Medium,FOMC Member Jefferson Speaks,,,
+2025-02-05,2:45am,CNY,Medium,Caixin Services PMI,51.0,52.3,52.2
+2025-02-05,8:45am,EUR,Medium,French Industrial Production m/m,-0.4%,-0.1%,0.1%
+2025-02-05,9:15am,EUR,Medium,Spanish Services PMI,54.9,56.7,57.3
+2025-02-05,9:45am,EUR,Medium,Italian Services PMI,50.4,50.5,50.7
+2025-02-05,9:50am,EUR,Medium,French Final Services PMI,48.2,48.9,48.9
+2025-02-05,9:55am,EUR,Medium,German Final Services PMI,52.5,52.5,52.5
+2025-02-05,10:00am,EUR,Medium,Final Services PMI,51.3,51.4,51.4
+2025-02-05,10:00am,EUR,Medium,Italian Retail Sales m/m,0.6%,0.1%,-0.4%
+2025-02-05,10:30am,GBP,Medium,Final Services PMI,50.8,51.2,51.2
+2025-02-05,11:00am,EUR,Medium,PPI m/m,0.4%,0.5%,1.7%
+2025-02-05,11:02am,GBP,Medium,30-y Bond Auction,4.98|3.2,,5.20|2.7
+2025-02-05,1:30pm,USD,Medium,FOMC Member Barkin Speaks,,,
+2025-02-05,2:15pm,USD,High,ADP Non-Farm Employment Change,183K,148K,176K
+2025-02-05,2:30pm,CAD,Medium,Trade Balance,0.7B,1.0B,-1.0B
+2025-02-05,2:30pm,USD,Medium,Trade Balance,-98.4B,-96.5B,-78.9B
+2025-02-05,3:00pm,USD,Medium,FOMC Member Barkin Speaks,,,
+2025-02-05,3:45pm,USD,N/A,Final Services PMI,52.9,52.9,52.8
+2025-02-05,4:00pm,USD,High,ISM Services PMI,52.8,54.2,54.1
+2025-02-05,4:30pm,USD,N/A,Crude Oil Inventories,8.7M,2.4M,3.5M
+2025-02-05,8:30pm,USD,Medium,FOMC Member Goolsbee Speaks,,,
+2025-02-05,9:00pm,USD,Medium,FOMC Member Bowman Speaks,,,
+2025-02-05,All Day,NZD,N/A,Bank Holiday,,,
+2025-02-06,1:30am,AUD,Medium,Goods Trade Balance,5.09B,6.52B,6.79B
+2025-02-06,1:30am,USD,Medium,FOMC Member Jefferson Speaks,,,
+2025-02-06,1:45am,AUD,Medium,NAB Quarterly Business Confidence,-4,,-7
+2025-02-06,4:35am,JPY,Medium,30-y Bond Auction,2.29|3.7,,2.30|3.7
+2025-02-06,7:45am,CHF,Medium,Unemployment Rate,2.7%,2.7%,2.7%
+2025-02-06,8:00am,EUR,Medium,German Factory Orders m/m,6.9%,1.9%,-5.2%
+2025-02-06,10:30am,GBP,N/A,Construction PMI,48.1,53.5,53.3
+2025-02-06,11:00am,EUR,Medium,Retail Sales m/m,-0.2%,-0.1%,0.0%
+2025-02-06,11:02am,EUR,Medium,French 10-y Bond Auction,3.15|2.2,,3.40|2.0
+2025-02-06,1:00pm,GBP,High,BOE Monetary Policy Report,,,
+2025-02-06,1:00pm,GBP,High,Monetary Policy Summary,,,
+2025-02-06,1:00pm,GBP,High,MPC Official Bank Rate Votes,0-9-0,0-8-1,0-3-6
+2025-02-06,1:00pm,GBP,High,Official Bank Rate,4.50%,4.50%,4.75%
+2025-02-06,1:30pm,GBP,High,BOE Gov Bailey Speaks,,,
+2025-02-06,1:30pm,USD,Medium,Challenger Job Cuts y/y,-39.5%,,11.4%
+2025-02-06,2:30pm,USD,High,Unemployment Claims,219K,214K,208K
+2025-02-06,2:30pm,USD,Medium,Prelim Nonfarm Productivity q/q,1.2%,1.5%,2.3%
+2025-02-06,2:30pm,USD,Medium,Prelim Unit Labor Costs q/q,3.0%,3.4%,0.8%
+2025-02-06,4:00pm,CAD,N/A,Ivey PMI,47.1,53.0,54.7
+2025-02-06,4:00pm,USD,Medium,Mortgage Delinquencies,3.98%,,3.92%
+2025-02-06,4:30pm,USD,Medium,Natural Gas Storage,-174B,-167B,-321B
+2025-02-06,8:30pm,USD,N/A,FOMC Member Waller Speaks,,,
+2025-02-06,9:30pm,USD,Medium,FOMC Member Daly Speaks,,,
+2025-02-06,10:05pm,GBP,High,BOE Gov Bailey Speaks,,,
+2025-02-06,11:10pm,USD,Medium,FOMC Member Logan Speaks,,,
+2025-02-07,12:30am,JPY,Medium,Household Spending y/y,2.7%,0.5%,-0.4%
+2025-02-07,6:00am,JPY,Medium,Leading Indicators,108.9%,108.2%,107.5%
+2025-02-07,8:00am,EUR,Medium,German Industrial Production m/m,-2.4%,-0.7%,1.3%
+2025-02-07,8:00am,EUR,Medium,German Trade Balance,20.7B,17.0B,19.2B
+2025-02-07,8:00am,GBP,Medium,Halifax HPI m/m,0.7%,0.4%,-0.2%
+2025-02-07,8:45am,EUR,Medium,French Prelim Private Payrolls q/q,-0.2%,-0.1%,0.1%
+2025-02-07,8:45am,EUR,Medium,French Trade Balance,-3.9B,-5.3B,-6.3B
+2025-02-07,9:00am,CHF,Medium,Foreign Currency Reserves,736B,,731B
+2025-02-07,9:00am,CHF,Medium,SECO Consumer Climate,-29,-31,-30
+2025-02-07,1:15pm,GBP,Medium,MPC Member Pill Speaks,,,
+2025-02-07,2:30pm,CAD,High,Employment Change,76.0K,25.5K,90.9K
+2025-02-07,2:30pm,CAD,High,Unemployment Rate,6.6%,6.8%,6.7%
+2025-02-07,2:30pm,USD,High,Average Hourly Earnings m/m,0.5%,0.3%,0.3%
+2025-02-07,2:30pm,USD,High,Non-Farm Employment Change,143K,169K,307K
+2025-02-07,2:30pm,USD,High,Unemployment Rate,4.0%,4.1%,4.1%
+2025-02-07,3:25pm,USD,Medium,FOMC Member Bowman Speaks,,,
+2025-02-07,4:00pm,USD,N/A,Prelim UoM Consumer Sentiment,67.8,71.9,71.1
+2025-02-07,4:00pm,USD,N/A,Prelim UoM Inflation Expectations,4.3%,,3.3%
+2025-02-07,4:00pm,USD,Medium,Final Wholesale Inventories m/m,-0.5%,-0.5%,-0.5%
+2025-02-07,4:30pm,USD,Medium,FOMC Member Goolsbee Speaks,,,
+2025-02-07,5:00pm,USD,Medium,Fed Monetary Policy Report,,,
+2025-02-07,6:00pm,USD,Medium,FOMC Member Kugler Speaks,,,
+2025-02-07,9:00pm,USD,Medium,Consumer Credit m/m,40.8B,17.7B,-5.4B
+2025-02-09,2:30am,CNY,N/A,CPI y/y,0.5%,0.4%,0.1%
+2025-02-09,2:30am,CNY,N/A,PPI y/y,-2.3%,-2.2%,-2.3%
+2025-02-10,12:50am,JPY,Medium,Bank Lending y/y,3.0%,3.1%,3.0%
+2025-02-10,12:50am,JPY,Medium,Current Account,2.73T,2.73T,3.03T
+2025-02-10,6:00am,JPY,Medium,Economy Watchers Sentiment,48.6,49.7,49.9
+2025-02-10,10:30am,EUR,Medium,Sentix Investor Confidence,-12.7,-16.4,-17.7
+2025-02-10,3:45pm,USD,Medium,Cleveland Fed Inflation Expectations,3.2%,,3.8%
+2025-02-10,5:15pm,EUR,N/A,ECB President Lagarde Speaks,,,
+2025-02-10,10:30pm,USD,High,President Trump Speaks,,,
+2025-02-11,12:30am,AUD,Medium,Westpac Consumer Sentiment,0.1%,,-0.7%
+2025-02-11,All Day,JPY,N/A,Bank Holiday,,,
+2025-02-11,1:01am,GBP,Medium,BRC Retail Sales Monitor y/y,2.5%,1.1%,3.1%
+2025-02-11,1:30am,AUD,Medium,NAB Business Confidence,4,,-2
+2025-02-11,9:45am,GBP,Medium,MPC Member Mann Speaks,,,
+2025-02-11,12:00pm,USD,Medium,NFIB Small Business Index,102.8,104.6,105.1
+2025-02-11,1:15pm,GBP,High,BOE Gov Bailey Speaks,,,
+2025-02-11,2:30pm,CAD,Medium,Building Permits m/m,11.0%,1.6%,-5.6%
+2025-02-11,2:50pm,USD,Medium,FOMC Member Hammack Speaks,,,
+2025-02-11,4:00pm,USD,High,Fed Chair Powell Testifies,,,
+2025-02-11,9:30pm,USD,Medium,FOMC Member Bowman Speaks,,,
+2025-02-11,9:30pm,USD,Medium,FOMC Member Williams Speaks,,,
+2025-02-11,9:40pm,USD,High,President Trump Speaks,,,
+2025-02-12,12:50am,JPY,Medium,M2 Money Stock y/y,1.3%,1.3%,1.3%
+2025-02-12,6:59am,JPY,Medium,Prelim Machine Tool Orders y/y,4.7%,,12.6%
+2025-02-12,All Day,EUR,High,Greek Presidential Elections,,,
+2025-02-12,10:00am,EUR,Medium,Italian Industrial Production m/m,-3.1%,-0.1%,0.3%
+2025-02-12,11:37am,EUR,Medium,German 30-y Bond Auction,2.70|2.5,,2.84|2.8
+2025-02-12,2:30pm,USD,High,Core CPI m/m,0.4%,0.3%,0.2%
+2025-02-12,2:30pm,USD,High,CPI m/m,0.5%,0.3%,0.4%
+2025-02-12,2:30pm,USD,High,CPI y/y,3.0%,2.9%,2.9%
+2025-02-12,3:30pm,GBP,Medium,CB Leading Index m/m,-0.1%,,-0.1%
+2025-02-12,4:00pm,GBP,Medium,MPC Member Greene Speaks,,,
+2025-02-12,4:00pm,USD,High,Fed Chair Powell Testifies,,,
+2025-02-12,4:30pm,USD,N/A,Crude Oil Inventories,4.1M,2.4M,8.7M
+2025-02-12,6:00pm,EUR,Medium,German Buba President Nagel Speaks,,,
+2025-02-12,6:00pm,USD,Medium,FOMC Member Bostic Speaks,,,
+2025-02-12,7:01pm,USD,Medium,10-y Bond Auction,4.63|2.5,,4.68|2.5
+2025-02-12,7:30pm,CAD,Medium,BOC Summary of Deliberations,,,
+2025-02-12,8:00pm,USD,Medium,Federal Budget Balance,-128.6B,-88.1B,-86.7B
+2025-02-12,9:48pm,USD,High,President Trump Speaks,,,
+2025-02-12,11:05pm,USD,N/A,FOMC Member Waller Speaks,,,
+2025-02-13,12:50am,JPY,Medium,PPI y/y,4.2%,4.0%,3.9%
+2025-02-13,1:00am,AUD,Medium,MI Inflation Expectations,4.6%,,4.0%
+2025-02-13,1:01am,GBP,Medium,RICS House Price Balance,22%,27%,26%
+2025-02-13,3:00am,NZD,High,Inflation Expectations q/q,2.06%,,2.12%
+2025-02-13,8:00am,EUR,Medium,German Final CPI m/m,-0.2%,-0.2%,-0.2%
+2025-02-13,8:00am,GBP,High,GDP m/m,0.4%,0.1%,0.1%
+2025-02-13,8:00am,GBP,N/A,Prelim GDP q/q,0.1%,-0.1%,0.0%
+2025-02-13,8:00am,GBP,Medium,Construction Output m/m,-0.2%,0.2%,0.6%
+2025-02-13,8:00am,GBP,Medium,Goods Trade Balance,-17.4B,-18.6B,-18.9B
+2025-02-13,8:00am,GBP,Medium,Index of Services 3m/3m,0.2%,0.1%,0.0%
+2025-02-13,8:00am,GBP,Medium,Industrial Production m/m,0.5%,0.2%,-0.5%
+2025-02-13,8:00am,GBP,Medium,Manufacturing Production m/m,0.7%,0.0%,-0.3%
+2025-02-13,8:00am,GBP,Medium,Prelim Business Investment q/q,-3.2%,-0.4%,1.9%
+2025-02-13,8:30am,CHF,High,CPI m/m,-0.1%,-0.1%,-0.1%
+2025-02-13,10:00am,EUR,Medium,ECB Economic Bulletin,,,
+2025-02-13,11:00am,EUR,Medium,Industrial Production m/m,-1.1%,-0.6%,0.4%
+2025-02-13,1:46pm,GBP,Medium,NIESR GDP Estimate,0.3%,,0.1%
+2025-02-13,2:30pm,USD,High,Core PPI m/m,0.3%,0.3%,0.4%
+2025-02-13,2:30pm,USD,High,PPI m/m,0.4%,0.3%,0.5%
+2025-02-13,2:30pm,USD,High,Unemployment Claims,213K,217K,220K
+2025-02-13,4:30pm,AUD,Medium,CB Leading Index m/m,0.2%,,0.6%
+2025-02-13,4:30pm,USD,Medium,Natural Gas Storage,-100B,-90B,-174B
+2025-02-13,6:00pm,EUR,Medium,German Buba President Nagel Speaks,,,
+2025-02-13,7:01pm,USD,Medium,30-y Bond Auction,4.75|2.3,,4.91|2.5
+2025-02-13,7:36pm,USD,High,President Trump Speaks,,,
+2025-02-13,10:30pm,NZD,Medium,BusinessNZ Manufacturing Index,51.4,,46.2
+2025-02-13,10:45pm,NZD,Medium,FPI m/m,1.9%,,0.1%
+2025-02-14,8:00am,EUR,Medium,German WPI m/m,0.9%,0.2%,0.1%
+2025-02-14,8:30am,CHF,Medium,PPI m/m,0.1%,0.1%,0.0%
+2025-02-14,10:02am,CNY,Medium,M2 Money Supply y/y,7.0%,7.3%,7.3%
+2025-02-14,10:03am,CNY,N/A,New Loans,5130B,770B,990B
+2025-02-14,11:00am,EUR,Medium,Flash Employment Change q/q,0.1%,0.1%,0.2%
+2025-02-14,11:00am,EUR,Medium,Flash GDP q/q,0.1%,0.0%,0.0%
+2025-02-14,2:30pm,CAD,Medium,Manufacturing Sales m/m,0.3%,0.8%,0.8%
+2025-02-14,2:30pm,CAD,Medium,Wholesale Sales m/m,-0.2%,0.2%,0.0%
+2025-02-14,2:30pm,USD,High,Core Retail Sales m/m,-0.4%,0.3%,0.7%
+2025-02-14,2:30pm,USD,High,Retail Sales m/m,-0.9%,-0.2%,0.7%
+2025-02-14,2:30pm,USD,Medium,Import Prices m/m,0.3%,0.4%,0.2%
+2025-02-14,3:15pm,USD,Medium,Capacity Utilization Rate,77.8%,77.7%,77.5%
+2025-02-14,3:15pm,USD,Medium,Industrial Production m/m,0.5%,0.3%,1.0%
+2025-02-14,4:00pm,USD,Medium,Business Inventories m/m,-0.2%,0.0%,0.1%
+2025-02-14,8:08pm,USD,High,President Trump Speaks,,,
+2025-02-14,9:00pm,USD,Medium,FOMC Member Logan Speaks,,,
+2025-02-16,10:30pm,NZD,Medium,BusinessNZ Services Index,50.4,,48.1
+2025-02-16,10:45pm,NZD,Medium,Visitor Arrivals m/m,3.5%,,1.3%
+2025-02-17,12:50am,JPY,Medium,Prelim GDP Price Index y/y,2.8%,2.8%,2.4%
+2025-02-17,12:50am,JPY,Medium,Prelim GDP q/q,0.7%,0.3%,0.3%
+2025-02-17,1:01am,GBP,Medium,Rightmove HPI m/m,0.5%,,1.7%
+2025-02-17,5:30am,JPY,Medium,Revised Industrial Production m/m,-0.2%,0.3%,0.3%
+2025-02-17,5:30am,JPY,Medium,Tertiary Industry Activity m/m,0.1%,0.2%,-0.3%
+2025-02-17,10:00am,EUR,Medium,Italian Trade Balance,5.98B,4.35B,4.00B
+2025-02-17,11:00am,EUR,Medium,Trade Balance,14.6B,14.4B,13.3B
+2025-02-17,All Day,EUR,Medium,Eurogroup Meetings,,,
+2025-02-17,12:00pm,EUR,Medium,German Buba President Nagel Speaks,,,
+2025-02-17,All Day,CAD,N/A,Bank Holiday,,,
+2025-02-17,All Day,USD,N/A,Bank Holiday,,,
+2025-02-17,2:15pm,CAD,Medium,Housing Starts,240K,251K,232K
+2025-02-17,2:30pm,CAD,Medium,Foreign Securities Purchases,14.37B,14.23B,13.84B
+2025-02-17,3:30pm,USD,Medium,FOMC Member Harker Speaks,,,
+2025-02-17,4:20pm,USD,Medium,FOMC Member Bowman Speaks,,,
+2025-02-18,12:00am,USD,N/A,FOMC Member Waller Speaks,,,
+2025-02-18,4:30am,AUD,High,Cash Rate,4.10%,4.10%,4.35%
+2025-02-18,4:30am,AUD,High,RBA Monetary Policy Statement,,,
+2025-02-18,4:30am,AUD,High,RBA Rate Statement,,,
+2025-02-18,5:30am,AUD,N/A,RBA Press Conference,,,
+2025-02-18,8:00am,GBP,High,Claimant Count Change,22.0K,10.0K,-15.1K
+2025-02-18,8:00am,GBP,N/A,Average Earnings Index 3m/y,6.0%,5.9%,5.5%
+2025-02-18,8:00am,GBP,Medium,Unemployment Rate,4.4%,4.5%,4.4%
+2025-02-18,8:45am,EUR,Medium,French Final CPI m/m,0.2%,-0.1%,-0.1%
+2025-02-18,10:30am,GBP,High,BOE Gov Bailey Speaks,,,
+2025-02-18,11:00am,EUR,N/A,German ZEW Economic Sentiment,26.0,19.9,10.3
+2025-02-18,11:00am,EUR,Medium,ZEW Economic Sentiment,24.2,24.3,18.0
+2025-02-18,All Day,EUR,Medium,ECOFIN Meetings,,,
+2025-02-18,2:30pm,CAD,High,CPI m/m,0.1%,0.1%,-0.4%
+2025-02-18,2:30pm,CAD,High,Median CPI y/y,2.7%,2.5%,2.6%
+2025-02-18,2:30pm,CAD,High,Trimmed CPI y/y,2.7%,2.6%,2.5%
+2025-02-18,2:30pm,CAD,N/A,Common CPI y/y,2.2%,2.1%,2.0%
+2025-02-18,2:30pm,CAD,Medium,Core CPI m/m,0.4%,,-0.3%
+2025-02-18,2:30pm,USD,N/A,Empire State Manufacturing Index,5.7,-1.9,-12.6
+2025-02-18,3:29pm,NZD,Medium,GDT Price Index,-0.6%,,3.7%
+2025-02-18,4:00pm,USD,Medium,NAHB Housing Market Index,42,46,47
+2025-02-18,4:20pm,USD,Medium,FOMC Member Daly Speaks,,,
+2025-02-18,7:00pm,USD,Medium,FOMC Member Barr Speaks,,,
+2025-02-18,10:00pm,USD,Medium,TIC Long-Term Purchases,72.0B,149.1B,53.2B
+2025-02-18,10:13pm,USD,High,President Trump Speaks,,,
+2025-02-18,10:45pm,NZD,Medium,PPI Input q/q,-0.9%,1.4%,1.9%
+2025-02-18,10:45pm,NZD,Medium,PPI Output q/q,-0.1%,1.1%,1.5%
+2025-02-19,12:30am,AUD,Medium,MI Leading Index m/m,0.1%,,0.0%
+2025-02-19,12:50am,JPY,Medium,Core Machinery Orders m/m,-1.2%,0.4%,3.4%
+2025-02-19,12:50am,JPY,Medium,Trade Balance,-0.86T,-0.26T,-0.22T
+2025-02-19,1:30am,AUD,High,Wage Price Index q/q,0.7%,0.8%,0.9%
+2025-02-19,2:00am,NZD,High,Official Cash Rate,3.75%,3.75%,4.25%
+2025-02-19,2:00am,NZD,High,RBNZ Monetary Policy Statement,,,
+2025-02-19,2:00am,NZD,High,RBNZ Rate Statement,,,
+2025-02-19,2:30am,CNY,Medium,New Home Prices m/m,-0.07%,,-0.08%
+2025-02-19,3:00am,NZD,High,RBNZ Press Conference,,,
+2025-02-19,3:00am,USD,High,President Trump Speaks,,,
+2025-02-19,8:00am,GBP,High,CPI y/y,3.0%,2.8%,2.5%
+2025-02-19,8:00am,GBP,Medium,Core CPI y/y,3.7%,3.7%,3.2%
+2025-02-19,8:00am,GBP,Medium,PPI Input m/m,0.8%,0.7%,0.2%
+2025-02-19,8:00am,GBP,Medium,PPI Output m/m,0.5%,0.2%,-0.2%
+2025-02-19,8:00am,GBP,Medium,RPI y/y,3.6%,3.7%,3.5%
+2025-02-19,10:00am,EUR,Medium,Current Account,38.4B,30.2B,25.1B
+2025-02-19,10:26am,CNY,Medium,Foreign Direct Investment ytd/y,-13.4%,,-27.1%
+2025-02-19,10:30am,GBP,Medium,HPI y/y,4.6%,3.2%,3.9%
+2025-02-19,11:35am,EUR,Medium,German 10-y Bond Auction,2.52|2.8,,2.54|2.8
+2025-02-19,2:30pm,USD,Medium,Building Permits,1.48M,1.46M,1.48M
+2025-02-19,2:30pm,USD,Medium,Housing Starts,1.37M,1.39M,1.52M
+2025-02-19,8:00pm,USD,High,FOMC Meeting Minutes,,,
+2025-02-19,8:10pm,NZD,N/A,RBNZ Gov Orr Speaks,,,
+2025-02-19,11:00pm,USD,High,President Trump Speaks,,,
+2025-02-19,11:00pm,USD,Medium,FOMC Member Jefferson Speaks,,,
+2025-02-20,1:30am,AUD,High,Employment Change,44.0K,19.4K,60.0K
+2025-02-20,1:30am,AUD,High,Unemployment Rate,4.1%,4.1%,4.0%
+2025-02-20,2:00am,CNY,N/A,1-y Loan Prime Rate,3.10%,3.10%,3.10%
+2025-02-20,2:00am,CNY,N/A,5-y Loan Prime Rate,3.60%,3.60%,3.60%
+2025-02-20,8:00am,CHF,Medium,Trade Balance,6.12B,3.55B,3.48B
+2025-02-20,8:00am,EUR,Medium,German PPI m/m,-0.1%,0.6%,-0.1%
+2025-02-20,12:00pm,GBP,Medium,CBI Industrial Order Expectations,-28,-30,-34
+2025-02-20,2:30pm,CAD,Medium,IPPI m/m,1.6%,0.8%,0.4%
+2025-02-20,2:30pm,CAD,Medium,NHPI m/m,-0.1%,0.1%,-0.1%
+2025-02-20,2:30pm,CAD,Medium,RMPI m/m,3.7%,2.4%,1.3%
+2025-02-20,2:30pm,USD,High,Unemployment Claims,219K,215K,214K
+2025-02-20,2:30pm,USD,N/A,Philly Fed Manufacturing Index,18.1,19.4,44.3
+2025-02-20,3:35pm,USD,Medium,FOMC Member Goolsbee Speaks,,,
+2025-02-20,4:00pm,EUR,Medium,Consumer Confidence,-14,-14,-14
+2025-02-20,4:00pm,USD,Medium,CB Leading Index m/m,-0.3%,-0.1%,0.1%
+2025-02-20,4:30pm,USD,Medium,Natural Gas Storage,-196B,-191B,-100B
+2025-02-20,5:00pm,EUR,Medium,German Buba President Nagel Speaks,,,
+2025-02-20,6:00pm,USD,N/A,Crude Oil Inventories,4.6M,3.2M,4.1M
+2025-02-20,6:05pm,USD,Medium,FOMC Member Musalem Speaks,,,
+2025-02-20,8:30pm,USD,Medium,FOMC Member Barr Speaks,,,
+2025-02-20,10:45pm,NZD,Medium,Trade Balance,-486M,225M,94M
+2025-02-20,11:00pm,AUD,Medium,Flash Manufacturing PMI,50.6,,50.2
+2025-02-20,11:00pm,AUD,Medium,Flash Services PMI,51.4,,51.2
+2025-02-20,11:00pm,USD,Medium,FOMC Member Kugler Speaks,,,
+2025-02-20,11:30pm,AUD,High,RBA Gov Bullock Speaks,,,
+2025-02-21,12:30am,JPY,Medium,National Core CPI y/y,3.2%,3.1%,3.0%
+2025-02-21,1:01am,GBP,Medium,GfK Consumer Confidence,-20,-22,-22
+2025-02-21,1:20am,USD,High,President Trump Speaks,,,
+2025-02-21,1:30am,JPY,Medium,Flash Manufacturing PMI,48.9,49.0,48.7
+2025-02-21,8:00am,GBP,High,Retail Sales m/m,1.7%,0.4%,-0.6%
+2025-02-21,8:00am,GBP,Medium,Public Sector Net Borrowing,-15.4B,-20.1B,18.1B
+2025-02-21,9:15am,EUR,High,French Flash Manufacturing PMI,45.5,45.3,45.0
+2025-02-21,9:15am,EUR,High,French Flash Services PMI,44.5,48.8,48.2
+2025-02-21,9:30am,EUR,High,German Flash Manufacturing PMI,46.1,45.4,45.0
+2025-02-21,9:30am,EUR,High,German Flash Services PMI,52.2,52.4,52.5
+2025-02-21,10:00am,EUR,N/A,Flash Manufacturing PMI,47.3,46.9,46.6
+2025-02-21,10:00am,EUR,N/A,Flash Services PMI,50.7,51.5,51.3
+2025-02-21,10:30am,GBP,High,Flash Manufacturing PMI,46.4,48.5,48.3
+2025-02-21,10:30am,GBP,High,Flash Services PMI,51.1,50.8,50.8
+2025-02-21,2:30pm,CAD,High,Core Retail Sales m/m,2.7%,1.7%,-0.7%
+2025-02-21,2:30pm,CAD,High,Retail Sales m/m,2.5%,1.5%,0.2%
+2025-02-21,3:45pm,USD,High,Flash Manufacturing PMI,51.6,51.3,51.2
+2025-02-21,3:45pm,USD,High,Flash Services PMI,49.7,53.0,52.9
+2025-02-21,4:00pm,USD,N/A,Existing Home Sales,4.08M,4.13M,4.29M
+2025-02-21,4:00pm,USD,N/A,Revised UoM Consumer Sentiment,64.7,67.8,67.8
+2025-02-21,4:00pm,USD,Medium,Revised UoM Inflation Expectations,4.3%,,4.3%
+2025-02-21,5:30pm,USD,Medium,FOMC Member Jefferson Speaks,,,
+2025-02-21,6:30pm,CAD,High,BOC Gov Macklem Speaks,,,
+2025-02-21,9:56pm,USD,High,President Trump Speaks,,,
+2025-02-23,All Day,EUR,High,German Federal Elections,,,
+2025-02-23,10:45pm,NZD,N/A,Retail Sales q/q,0.9%,0.5%,0.0%
+2025-02-23,10:47pm,NZD,Medium,Core Retail Sales q/q,1.4%,0.2%,-0.6%
+2025-02-24,All Day,JPY,N/A,Bank Holiday,,,
+2025-02-24,3:00am,NZD,Medium,Credit Card Spending y/y,1.3%,,-1.3%
+2025-02-24,10:00am,EUR,N/A,German ifo Business Climate,85.2,85.9,85.2
+2025-02-24,10:00am,GBP,Medium,MPC Member Lombardelli Speaks,,,
+2025-02-24,11:00am,EUR,Medium,Final Core CPI y/y,2.7%,2.7%,2.7%
+2025-02-24,11:00am,EUR,Medium,Final CPI y/y,2.5%,2.5%,2.5%
+2025-02-24,12:00pm,EUR,Medium,German Buba Monthly Report,,,
+2025-02-24,2:15pm,CAD,Medium,Gov Council Member Gravelle Speaks,,,
+2025-02-24,2:15pm,GBP,Medium,MPC Member Ramsden Speaks,,,
+2025-02-24,2:30pm,CAD,Medium,Corporate Profits q/q,2.1%,,-2.5%
+2025-02-24,2:55pm,EUR,Medium,Belgian NBB Business Climate,-12.3,-12.9,-13.6
+2025-02-24,7:00pm,GBP,Medium,MPC Member Dhingra Speaks,,,
+2025-02-24,8:49pm,USD,High,President Trump Speaks,,,
+2025-02-25,12:30am,USD,Medium,FOMC Member Goolsbee Speaks,,,
+2025-02-25,12:50am,JPY,Medium,SPPI y/y,3.1%,3.1%,3.0%
+2025-02-25,8:00am,EUR,Medium,German Final GDP q/q,-0.2%,-0.2%,-0.2%
+2025-02-25,10:15am,USD,Medium,FOMC Member Logan Speaks,,,
+2025-02-25,11:00am,EUR,Medium,German Buba President Nagel Speaks,,,
+2025-02-25,12:00pm,GBP,Medium,CBI Realized Sales,-23,-21,-24
+2025-02-25,3:00pm,GBP,Medium,MPC Member Pill Speaks,,,
+2025-02-25,3:00pm,USD,N/A,S&P/CS Composite-20 HPI y/y,4.5%,4.4%,4.3%
+2025-02-25,3:00pm,USD,Medium,HPI m/m,0.4%,0.2%,0.4%
+2025-02-25,4:00pm,USD,N/A,CB Consumer Confidence,98.3,102.7,104.1
+2025-02-25,4:00pm,USD,N/A,Richmond Manufacturing Index,6,-3,-4
+2025-02-25,5:45pm,USD,Medium,FOMC Member Barr Speaks,,,
+2025-02-25,7:00pm,USD,Medium,FOMC Member Barkin Speaks,,,
+2025-02-25,9:59pm,USD,High,President Trump Speaks,,,
+2025-02-26,1:30am,AUD,High,CPI y/y,2.5%,2.6%,2.5%
+2025-02-26,1:30am,AUD,Medium,Construction Work Done q/q,0.5%,1.0%,2.0%
+2025-02-26,6:00am,JPY,Medium,BOJ Core CPI y/y,2.2%,2.0%,1.9%
+2025-02-26,8:00am,EUR,Medium,German GfK Consumer Climate,-24.7,-21.7,-22.6
+2025-02-26,10:00am,CHF,Medium,UBS Economic Expectations,3.4,,17.7
+2025-02-26,2:30pm,USD,Medium,FOMC Member Barkin Speaks,,,
+2025-02-26,3:00pm,CNY,Medium,CB Leading Index m/m,-0.2%,,-0.1%
+2025-02-26,4:00pm,USD,N/A,New Home Sales,657K,679K,734K
+2025-02-26,4:30pm,USD,N/A,Crude Oil Inventories,-2.3M,2.5M,4.6M
+2025-02-26,Day 1,All,N/A,G20 Meetings,,,
+2025-02-26,5:30pm,GBP,Medium,MPC Member Dhingra Speaks,,,
+2025-02-26,6:00pm,USD,Medium,FOMC Member Bostic Speaks,,,
+2025-02-27,1:00am,NZD,Medium,ANZ Business Confidence,58.4,,54.4
+2025-02-27,1:30am,AUD,Medium,Private Capital Expenditure q/q,-0.2%,0.6%,1.6%
+2025-02-27,9:00am,CHF,N/A,GDP q/q,0.2%,0.2%,0.4%
+2025-02-27,9:00am,EUR,N/A,Spanish Flash CPI y/y,3.0%,3.0%,2.9%
+2025-02-27,10:00am,EUR,Medium,M3 Money Supply y/y,3.6%,3.8%,3.4%
+2025-02-27,10:00am,EUR,Medium,Private Loans y/y,1.3%,1.2%,1.1%
+2025-02-27,11:22am,EUR,Medium,Italian 10-y Bond Auction,3.55|1.6,,3.60|1.8
+2025-02-27,1:30pm,EUR,Medium,ECB Monetary Policy Meeting Accounts,,,
+2025-02-27,2:00pm,USD,Medium,FOMC Member Barkin Speaks,,,
+2025-02-27,2:30pm,CAD,Medium,Current Account,-5.0B,-3.2B,-3.6B
+2025-02-27,2:30pm,USD,High,Prelim GDP q/q,2.3%,2.3%,2.3%
+2025-02-27,2:30pm,USD,High,Unemployment Claims,242K,222K,220K
+2025-02-27,2:30pm,USD,N/A,Core Durable Goods Orders m/m,0.0%,0.2%,0.1%
+2025-02-27,2:30pm,USD,N/A,Durable Goods Orders m/m,3.1%,2.0%,-1.8%
+2025-02-27,2:30pm,USD,N/A,Prelim GDP Price Index q/q,2.4%,2.2%,2.2%
+2025-02-27,3:15pm,USD,Medium,FOMC Member Schmid Speaks,,,
+2025-02-27,4:00pm,USD,N/A,Pending Home Sales m/m,-4.6%,-0.9%,-4.1%
+2025-02-27,4:00pm,USD,Medium,FOMC Member Barr Speaks,,,
+2025-02-27,4:30pm,USD,Medium,Natural Gas Storage,-261B,-276B,-196B
+2025-02-27,Day 2,All,N/A,G20 Meetings,,,
+2025-02-27,5:45pm,USD,Medium,FOMC Member Bowman Speaks,,,
+2025-02-27,7:15pm,USD,Medium,FOMC Member Hammack Speaks,,,
+2025-02-27,9:15pm,USD,Medium,FOMC Member Harker Speaks,,,
+2025-02-27,9:30pm,USD,N/A,President Trump Speaks,,,
+2025-02-28,12:30am,JPY,N/A,Tokyo Core CPI y/y,2.2%,2.3%,2.5%
+2025-02-28,12:50am,JPY,Medium,Prelim Industrial Production m/m,-1.1%,-1.0%,-0.2%
+2025-02-28,12:50am,JPY,Medium,Retail Sales y/y,3.9%,3.9%,3.5%
+2025-02-28,1:30am,AUD,Medium,Private Sector Credit m/m,0.5%,0.5%,0.6%
+2025-02-28,6:00am,JPY,Medium,Housing Starts y/y,-4.6%,-2.6%,-2.5%
+2025-02-28,8:00am,EUR,Medium,German Import Prices m/m,1.1%,0.7%,0.4%
+2025-02-28,8:00am,EUR,Medium,German Retail Sales m/m,0.2%,0.4%,-0.9%
+2025-02-28,8:00am,GBP,Medium,MPC Member Ramsden Speaks,,,
+2025-02-28,8:00am,GBP,Medium,Nationwide HPI m/m,0.4%,0.2%,0.1%
+2025-02-28,All Day,EUR,High,German Prelim CPI m/m,0.4%,0.4%,-0.2%
+2025-02-28,8:30am,CHF,Medium,Retail Sales y/y,1.3%,1.6%,2.1%
+2025-02-28,8:45am,EUR,Medium,French Consumer Spending m/m,-0.5%,-0.6%,0.7%
+2025-02-28,8:45am,EUR,Medium,French Final Private Payrolls q/q,-0.3%,-0.2%,-0.2%
+2025-02-28,8:45am,EUR,Medium,French Prelim CPI m/m,0.0%,0.5%,0.2%
+2025-02-28,8:45am,EUR,Medium,French Prelim GDP q/q,-0.1%,-0.1%,-0.1%
+2025-02-28,9:00am,CHF,Medium,KOF Economic Barometer,101.7,101.9,103.0
+2025-02-28,9:55am,EUR,Medium,German Unemployment Change,5K,14K,11K
+2025-02-28,11:00am,EUR,Medium,Italian Prelim CPI m/m,0.2%,0.2%,0.6%
+2025-02-28,2:30pm,CAD,High,GDP m/m,0.2%,0.3%,-0.2%
+2025-02-28,2:30pm,USD,High,Core PCE Price Index m/m,0.3%,0.3%,0.2%
+2025-02-28,2:30pm,USD,Medium,Goods Trade Balance,-153.3B,-116.9B,-122.0B
+2025-02-28,2:30pm,USD,Medium,Personal Income m/m,0.9%,0.4%,0.4%
+2025-02-28,2:30pm,USD,Medium,Personal Spending m/m,-0.2%,0.2%,0.8%
+2025-02-28,2:30pm,USD,Medium,Prelim Wholesale Inventories m/m,0.7%,0.1%,-0.4%
+2025-02-28,3:45pm,USD,N/A,Chicago PMI,45.5,40.5,39.5
+2025-02-28,6:15pm,USD,High,President Trump Speaks,,,

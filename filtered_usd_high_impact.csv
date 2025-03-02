@@ -1,0 +1,72 @@
+Date,Time,Currency,Impact,Event,Actual,Forecast,Previous
+2024-12-02,4:00pm,USD,High,ISM Manufacturing PMI,48.4,47.7,46.5
+2024-12-03,4:00pm,USD,High,JOLTS Job Openings,7.74M,7.51M,7.37M
+2024-12-04,2:15pm,USD,High,ADP Non-Farm Employment Change,146K,152K,184K
+2024-12-04,4:00pm,USD,High,ISM Services PMI,52.1,55.7,56.0
+2024-12-05,2:30pm,USD,High,Unemployment Claims,224K,215K,215K
+2024-12-06,2:30pm,USD,High,Average Hourly Earnings m/m,0.4%,0.3%,0.4%
+2024-12-06,2:30pm,USD,High,Non-Farm Employment Change,227K,218K,36K
+2024-12-06,2:30pm,USD,High,Unemployment Rate,4.2%,4.1%,4.1%
+2024-12-11,2:30pm,USD,High,Core CPI m/m,0.3%,0.3%,0.3%
+2024-12-11,2:30pm,USD,High,CPI m/m,0.3%,0.3%,0.2%
+2024-12-11,2:30pm,USD,High,CPI y/y,2.7%,2.7%,2.6%
+2024-12-12,2:30pm,USD,High,Core PPI m/m,0.2%,0.2%,0.3%
+2024-12-12,2:30pm,USD,High,PPI m/m,0.4%,0.2%,0.3%
+2024-12-12,2:30pm,USD,High,Unemployment Claims,242K,221K,225K
+2024-12-16,3:45pm,USD,High,Flash Manufacturing PMI,48.3,49.4,49.7
+2024-12-16,3:45pm,USD,High,Flash Services PMI,58.5,55.7,56.1
+2024-12-17,2:30pm,USD,High,Core Retail Sales m/m,0.2%,0.4%,0.2%
+2024-12-17,2:30pm,USD,High,Retail Sales m/m,0.7%,0.6%,0.5%
+2024-12-18,8:00pm,USD,High,Federal Funds Rate,4.50%,4.50%,4.75%
+2024-12-19,2:30pm,USD,High,Final GDP q/q,3.1%,2.8%,2.8%
+2024-12-19,2:30pm,USD,High,Unemployment Claims,220K,229K,242K
+2024-12-20,2:30pm,USD,High,Core PCE Price Index m/m,0.1%,0.2%,0.3%
+2024-12-26,2:30pm,USD,High,Unemployment Claims,219K,223K,220K
+2025-01-02,2:30pm,USD,High,Unemployment Claims,211K,222K,220K
+2025-01-03,4:00pm,USD,High,ISM Manufacturing PMI,49.3,48.2,48.4
+2025-01-07,4:00pm,USD,High,ISM Services PMI,54.1,53.5,52.1
+2025-01-07,4:00pm,USD,High,JOLTS Job Openings,8.10M,7.73M,7.84M
+2025-01-08,2:15pm,USD,High,ADP Non-Farm Employment Change,122K,139K,146K
+2025-01-08,2:30pm,USD,High,Unemployment Claims,201K,214K,211K
+2025-01-10,2:30pm,USD,High,Average Hourly Earnings m/m,0.3%,0.3%,0.4%
+2025-01-10,2:30pm,USD,High,Non-Farm Employment Change,256K,164K,212K
+2025-01-10,2:30pm,USD,High,Unemployment Rate,4.1%,4.2%,4.2%
+2025-01-14,2:30pm,USD,High,Core PPI m/m,0.0%,0.2%,0.2%
+2025-01-14,2:30pm,USD,High,PPI m/m,0.2%,0.4%,0.4%
+2025-01-15,2:30pm,USD,High,Core CPI m/m,0.2%,0.3%,0.3%
+2025-01-15,2:30pm,USD,High,CPI m/m,0.4%,0.4%,0.3%
+2025-01-15,2:30pm,USD,High,CPI y/y,2.9%,2.9%,2.7%
+2025-01-16,2:30pm,USD,High,Core Retail Sales m/m,0.4%,0.5%,0.2%
+2025-01-16,2:30pm,USD,High,Retail Sales m/m,0.4%,0.6%,0.8%
+2025-01-16,2:30pm,USD,High,Unemployment Claims,217K,210K,203K
+2025-01-23,2:30pm,USD,High,Unemployment Claims,223K,221K,217K
+2025-01-24,3:45pm,USD,High,Flash Manufacturing PMI,50.1,49.8,49.4
+2025-01-24,3:45pm,USD,High,Flash Services PMI,52.8,56.4,56.8
+2025-01-28,4:00pm,USD,High,CB Consumer Confidence,104.1,105.7,109.5
+2025-01-29,8:00pm,USD,High,Federal Funds Rate,4.50%,4.50%,4.50%
+2025-01-30,2:30pm,USD,High,Advance GDP q/q,2.3%,2.7%,3.1%
+2025-01-30,2:30pm,USD,High,Unemployment Claims,207K,224K,223K
+2025-01-31,2:30pm,USD,High,Core PCE Price Index m/m,0.2%,0.2%,0.1%
+2025-01-31,2:30pm,USD,High,Employment Cost Index q/q,0.9%,0.9%,0.8%
+2025-02-03,4:00pm,USD,High,ISM Manufacturing PMI,50.9,49.3,49.3
+2025-02-04,4:00pm,USD,High,JOLTS Job Openings,7.60M,8.01M,8.16M
+2025-02-05,2:15pm,USD,High,ADP Non-Farm Employment Change,183K,148K,176K
+2025-02-05,4:00pm,USD,High,ISM Services PMI,52.8,54.2,54.1
+2025-02-06,2:30pm,USD,High,Unemployment Claims,219K,214K,208K
+2025-02-07,2:30pm,USD,High,Average Hourly Earnings m/m,0.5%,0.3%,0.3%
+2025-02-07,2:30pm,USD,High,Non-Farm Employment Change,143K,169K,307K
+2025-02-07,2:30pm,USD,High,Unemployment Rate,4.0%,4.1%,4.1%
+2025-02-12,2:30pm,USD,High,Core CPI m/m,0.4%,0.3%,0.2%
+2025-02-12,2:30pm,USD,High,CPI m/m,0.5%,0.3%,0.4%
+2025-02-12,2:30pm,USD,High,CPI y/y,3.0%,2.9%,2.9%
+2025-02-13,2:30pm,USD,High,Core PPI m/m,0.3%,0.3%,0.4%
+2025-02-13,2:30pm,USD,High,PPI m/m,0.4%,0.3%,0.5%
+2025-02-13,2:30pm,USD,High,Unemployment Claims,213K,217K,220K
+2025-02-14,2:30pm,USD,High,Core Retail Sales m/m,-0.4%,0.3%,0.7%
+2025-02-14,2:30pm,USD,High,Retail Sales m/m,-0.9%,-0.2%,0.7%
+2025-02-20,2:30pm,USD,High,Unemployment Claims,219K,215K,214K
+2025-02-21,3:45pm,USD,High,Flash Manufacturing PMI,51.6,51.3,51.2
+2025-02-21,3:45pm,USD,High,Flash Services PMI,49.7,53.0,52.9
+2025-02-27,2:30pm,USD,High,Prelim GDP q/q,2.3%,2.3%,2.3%
+2025-02-27,2:30pm,USD,High,Unemployment Claims,242K,222K,220K
+2025-02-28,2:30pm,USD,High,Core PCE Price Index m/m,0.3%,0.3%,0.2%

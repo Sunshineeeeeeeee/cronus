@@ -15,6 +15,7 @@ from gudhi.rips_complex import RipsComplex
 from gudhi.weighted_rips_complex import WeightedRipsComplex
 from gudhi.persistence_graphical_tools import plot_persistence_barcode
 from gudhi.persistence_graphical_tools import plot_persistence_diagram
+import pandas as pd
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -61,6 +62,12 @@ class TopologicalDataAnalyzer:
         self.mapper_graph = None
         self.witness_complex = None
         self.multi_persistence_diagrams = None
+        
+        # New attributes for Zigzag and Path Homology
+        self.zigzag_diagrams = None
+        self.path_homology_diagrams = None
+        self.flow_complex = None
+        self.state_transitions = None
         
     def compute_temporally_weighted_distance(self, alpha=0.5, beta=0.1, lambda_info=1.0, mi_matrix=None):
         """
@@ -715,7 +722,7 @@ class TopologicalDataAnalyzer:
     
     def analyze_regimes(self):
         """
-        Analyze identified regimes including transitions, characteristics, and significance.
+        Analyze the identified regimes to extract statistics and patterns.
         
         Returns:
         --------
@@ -725,131 +732,53 @@ class TopologicalDataAnalyzer:
         print("Analyzing volatility regimes...")
         
         if self.regime_labels is None:
-            raise ValueError("Regimes must be identified first")
-            
+            raise ValueError("Must detect regimes before analyzing them")
+        
         n_regimes = len(np.unique(self.regime_labels))
-        
-        # 1. Compute transition probabilities between regimes
-        transitions = np.zeros((n_regimes, n_regimes))
-        
-        for i in range(len(self.regime_labels) - 1):
-            from_regime = self.regime_labels[i]
-            to_regime = self.regime_labels[i + 1]
-            
-            # Only count transitions between different regimes
-            if from_regime != to_regime:
-                transitions[from_regime, to_regime] += 1
-                
-        # Normalize to get probabilities
-        transition_probs = np.zeros_like(transitions)
-        for i in range(n_regimes):
-            row_sum = transitions[i].sum()
-            if row_sum > 0:
-                transition_probs[i] = transitions[i] / row_sum
-                
-        # 2. Compute regime statistics
         regime_stats = []
         
-        for regime in range(n_regimes):
-            regime_points = np.where(self.regime_labels == regime)[0]
-            
-            # Skip if no points in this regime
-            if len(regime_points) == 0:
-                continue
-                
-            # Get regime timespan
-            regime_times = self.timestamps[regime_points]
-            if np.issubdtype(self.timestamps.dtype, np.datetime64):
-                start_time = min(regime_times)
-                end_time = max(regime_times)
-                duration = (end_time - start_time).total_seconds()
-            else:
-                start_time = min(regime_times)
-                end_time = max(regime_times)
-                duration = end_time - start_time
-                
-            # Get regime volatility (if available)
-            vol_features = [i for i, name in enumerate(self.feature_names) if 'volatility' in name.lower()]
-            
-            if vol_features:
-                vol_idx = vol_features[0]
-                vol_values = self.features[regime_points, vol_idx]
-                mean_vol = np.mean(vol_values)
-                max_vol = np.max(vol_values)
-                min_vol = np.min(vol_values)
-                vol_range = max_vol - min_vol
-                vol_std = np.std(vol_values)
-            else:
-                mean_vol = max_vol = min_vol = vol_range = vol_std = np.nan
-                
-            # Compute feature importance within this regime
-            if hasattr(self, 'mi_matrix'):
-                # Use mutual information to rank features
-                sub_mi = self.mi_matrix[regime_points][:, vol_features[0] if vol_features else 0]
-                feature_importance = {
-                    self.feature_names[i]: np.mean(sub_mi[i]) 
-                    for i in range(len(self.feature_names))
-                }
-            else:
-                feature_importance = {}
-                
-            # Store statistics
-            regime_stats.append({
-                'regime_id': regime,
-                'size': len(regime_points),
-                'start_time': start_time,
-                'end_time': end_time,
-                'duration': duration,
-                'mean_vol': mean_vol,
-                'max_vol': max_vol,
-                'min_vol': min_vol,
-                'vol_range': vol_range,
-                'vol_std': vol_std,
-                'feature_importance': feature_importance
-            })
-            
-        # 3. Compute information-theoretic measures between regimes
-        regime_info = {}
+        # Initialize transition probability matrix
+        transition_probs = np.zeros((n_regimes, n_regimes))
         
-        # Compute Jensen-Shannon divergence between regimes
-        for r1 in range(n_regimes):
-            for r2 in range(r1+1, n_regimes):
-                r1_points = np.where(self.regime_labels == r1)[0]
-                r2_points = np.where(self.regime_labels == r2)[0]
+        # Compute transitions
+        for i in range(len(self.regime_labels) - 1):
+            current_regime = self.regime_labels[i]
+            next_regime = self.regime_labels[i + 1]
+            transition_probs[current_regime, next_regime] += 1
+        
+        # Normalize transition probabilities
+        row_sums = transition_probs.sum(axis=1, keepdims=True)
+        row_sums[row_sums == 0] = 1  # Avoid division by zero
+        transition_probs = transition_probs / row_sums
+        
+        # Analyze each regime
+        for regime in range(n_regimes):
+            regime_mask = self.regime_labels == regime
+            regime_points = np.where(regime_mask)[0]
+            regime_times = self.timestamps[regime_points]
+            
+            if len(regime_points) > 0:
+                # Convert numpy.timedelta64 to pandas Timedelta for duration calculation
+                if np.issubdtype(regime_times.dtype, np.datetime64):
+                    start_time = pd.Timestamp(min(regime_times))
+                    end_time = pd.Timestamp(max(regime_times))
+                    duration = (end_time - start_time).total_seconds()
+                else:
+                    # If not datetime, use number of points as duration
+                    duration = len(regime_points)
                 
-                if len(r1_points) == 0 or len(r2_points) == 0:
-                    continue
-                    
-                # Compute divergence for each feature
-                feature_divergences = {}
-                
-                for j, feature_name in enumerate(self.feature_names):
-                    x1 = self.features[r1_points, j]
-                    x2 = self.features[r2_points, j]
-                    
-                    # Compute histograms
-                    hist1, bin_edges = np.histogram(x1, bins=20, density=True)
-                    hist2, _ = np.histogram(x2, bins=bin_edges, density=True)
-                    
-                    # Add small constant to avoid zero probabilities
-                    hist1 += 1e-10
-                    hist2 += 1e-10
-                    
-                    # Normalize
-                    hist1 /= hist1.sum()
-                    hist2 /= hist2.sum()
-                    
-                    # Compute Jensen-Shannon divergence
-                    m = 0.5 * (hist1 + hist2)
-                    js_div = 0.5 * (np.sum(hist1 * np.log(hist1 / m)) + np.sum(hist2 * np.log(hist2 / m)))
-                    
-                    feature_divergences[feature_name] = js_div
-                    
-                regime_info[(r1, r2)] = {
-                    'feature_divergences': feature_divergences,
-                    'mean_divergence': np.mean(list(feature_divergences.values()))
+                # Calculate regime statistics
+                stats = {
+                    'regime_id': regime,
+                    'size': len(regime_points),
+                    'start_time': start_time if np.issubdtype(regime_times.dtype, np.datetime64) else regime_points[0],
+                    'end_time': end_time if np.issubdtype(regime_times.dtype, np.datetime64) else regime_points[-1],
+                    'duration': duration,
+                    'points': regime_points.tolist()
                 }
                 
+                regime_stats.append(stats)
+        
         result = {
             'regime_labels': self.regime_labels,
             'regime_stats': regime_stats,
@@ -857,4 +786,224 @@ class TopologicalDataAnalyzer:
             'n_regimes': n_regimes
         }
         
-        return result 
+        return result
+
+    def compute_zigzag_persistence(self, window_size=100, overlap=50):
+        """
+        Compute zigzag persistence to capture market state transitions.
+        
+        Parameters:
+        -----------
+        window_size : int
+            Size of sliding window for state computation
+        overlap : int
+            Number of points to overlap between windows
+            
+        Returns:
+        --------
+        dict
+            Dictionary containing zigzag persistence diagrams
+        """
+        print("Computing zigzag persistence for market states...")
+        
+        try:
+            # Create sequence of complexes
+            complexes = []
+            for i in range(0, self.n_samples - window_size + 1, window_size - overlap):
+                # Get window of data
+                window_data = self.features[i:i + window_size]
+                
+                # Create Rips complex for this window
+                rips = gudhi.RipsComplex(
+                    points=window_data,
+                    max_edge_length=np.inf
+                )
+                
+                # Create simplex tree
+                st = rips.create_simplex_tree(max_dimension=2)
+                
+                # Add to sequence
+                complexes.append(st)
+            
+            # Create zigzag complex
+            zz = gudhi.ZigzagPersistence()
+            
+            # Add complexes to zigzag
+            for i, st in enumerate(complexes):
+                zz.add_complex(st)
+                
+                # Add inclusion maps between overlapping windows
+                if i > 0:
+                    overlap_points = list(range(overlap))
+                    zz.add_inclusion(complexes[i-1], st, overlap_points)
+            
+            # Compute zigzag persistence
+            zz_diagrams = zz.compute_persistence()
+            
+            # Process results
+            self.zigzag_diagrams = {
+                'diagrams': zz_diagrams,
+                'complexes': complexes,
+                'window_size': window_size,
+                'overlap': overlap
+            }
+            
+            # Generate visualizations
+            if not os.path.exists('zigzag_plots'):
+                os.makedirs('zigzag_plots')
+                
+            plt.figure(figsize=(12, 6))
+            for dim in range(3):
+                if dim in zz_diagrams:
+                    pairs = zz_diagrams[dim]
+                    for birth, death in pairs:
+                        plt.plot([birth, death], [dim, dim], 
+                               c=['blue', 'red', 'green'][dim],
+                               linewidth=2, label=f'H{dim}' if birth == pairs[0][0] else "")
+            
+            plt.xlabel('Time')
+            plt.ylabel('Dimension')
+            plt.title('Zigzag Persistence Diagram')
+            plt.legend()
+            plt.grid(True, alpha=0.3)
+            plt.savefig('zigzag_plots/zigzag_persistence.png')
+            plt.close()
+            
+            return self.zigzag_diagrams
+            
+        except Exception as e:
+            print(f"Error in zigzag persistence computation: {str(e)}")
+            return None
+
+    def compute_persistent_path_homology(self, max_path_length=3):
+        """
+        Compute persistent path homology to capture order flow dynamics.
+        
+        Parameters:
+        -----------
+        max_path_length : int
+            Maximum length of paths to consider
+            
+        Returns:
+        --------
+        dict
+            Dictionary containing path homology diagrams
+        """
+        print("Computing persistent path homology for order flow...")
+        
+        try:
+            # Create directed network from temporal distance matrix
+            G = self.construct_directed_network(epsilon=0.5)
+            
+            # Create path complex
+            path_complex = self.compute_path_complex(G, max_path_length)
+            
+            # Create flow complex (directed simplicial complex)
+            self.flow_complex = nx.DiGraph()
+            
+            # Add vertices
+            for node in G.nodes():
+                self.flow_complex.add_node(node)
+            
+            # Add edges with flow direction
+            for u, v in G.edges():
+                # Determine flow direction based on price movement
+                price_diff = self.features[v, 0] - self.features[u, 0]  # Assuming first feature is price
+                if price_diff > 0:
+                    self.flow_complex.add_edge(u, v, direction='up')
+                else:
+                    self.flow_complex.add_edge(v, u, direction='down')
+            
+            # Compute path homology
+            path_homology = {}
+            
+            for dim in range(max_path_length + 1):
+                # Get paths of current dimension
+                paths = path_complex[dim]
+                
+                # Create boundary matrix
+                n_paths = len(paths)
+                if n_paths == 0:
+                    continue
+                    
+                boundary_matrix = np.zeros((n_paths, n_paths))
+                
+                # Fill boundary matrix
+                for i, path in enumerate(paths):
+                    # Get boundary paths
+                    boundary_paths = []
+                    for j in range(len(path) - 1):
+                        boundary_path = path[:j] + path[j+1:]
+                        if boundary_path in paths:
+                            boundary_paths.append(paths.index(boundary_path))
+                    
+                    # Add to boundary matrix
+                    for j in boundary_paths:
+                        boundary_matrix[i, j] = 1
+                
+                # Compute homology
+                homology = self._compute_homology_from_boundary(boundary_matrix)
+                path_homology[dim] = homology
+            
+            # Store results
+            self.path_homology_diagrams = {
+                'homology': path_homology,
+                'path_complex': path_complex,
+                'flow_complex': self.flow_complex
+            }
+            
+            # Generate visualizations
+            if not os.path.exists('path_homology_plots'):
+                os.makedirs('path_homology_plots')
+                
+            plt.figure(figsize=(12, 6))
+            for dim in range(max_path_length + 1):
+                if dim in path_homology:
+                    betti = path_homology[dim]['betti']
+                    plt.plot([0, self.n_samples], [betti, betti], 
+                           c=['blue', 'red', 'green'][dim],
+                           linewidth=2, label=f'H{dim}')
+            
+            plt.xlabel('Time')
+            plt.ylabel('Betti Numbers')
+            plt.title('Path Homology Betti Numbers')
+            plt.legend()
+            plt.grid(True, alpha=0.3)
+            plt.savefig('path_homology_plots/path_homology.png')
+            plt.close()
+            
+            return self.path_homology_diagrams
+            
+        except Exception as e:
+            print(f"Error in path homology computation: {str(e)}")
+            return None
+            
+    def _compute_homology_from_boundary(self, boundary_matrix):
+        """
+        Helper method to compute homology from boundary matrix.
+        
+        Parameters:
+        -----------
+        boundary_matrix : numpy.ndarray
+            Boundary matrix of the complex
+            
+        Returns:
+        --------
+        dict
+            Dictionary containing homology information
+        """
+        # Compute rank of boundary matrix
+        rank = np.linalg.matrix_rank(boundary_matrix)
+        
+        # Compute nullity
+        nullity = boundary_matrix.shape[0] - rank
+        
+        
+        # Compute Betti numbers
+        betti = nullity - rank
+        
+        return {
+            'rank': rank,
+            'nullity': nullity,
+            'betti': betti
+        } 

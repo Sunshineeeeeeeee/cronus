@@ -39,6 +39,7 @@ class MicrostructureFeatureEngine:
         self.price_col = price_col
         self.volume_col = volume_col
         self.volatility_col = volatility_col
+        self.window_sizes = None  # Will store window sizes after feature extraction
         
         # Ensure timestamp is in datetime format
         if self.df[timestamp_col].dtype != 'datetime64[ns]':
@@ -322,6 +323,9 @@ class MicrostructureFeatureEngine:
         tuple
             (feature_array, feature_names, dataframe)
         """
+        # Store window sizes
+        self.window_sizes = window_sizes
+        
         # Compute all features
         self._compute_time_features()
         self.compute_microstructure_features(window_sizes)
@@ -342,5 +346,4 @@ class MicrostructureFeatureEngine:
         
         print(f"Extracted {len(feature_names)} features")
         
-        # Return features, names, and enhanced dataframe
         return feature_array, feature_names, self.df 

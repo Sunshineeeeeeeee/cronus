@@ -20,11 +20,18 @@ class VolatilityRegimesIdentifier:
         self.analyzer = None
         self.regimes = None
         self.regime_stats = None
+        self.sample_size = None
+        self.sampled_data = None
+        self.pattern_classifier = None
+        self.window_sizes = None  # Store window sizes
         
     def identify_regimes(self, df, timestamp_col, price_col, volume_col, volatility_col, 
-                        n_regimes=4, window_sizes=None, top_features=10, alpha=0.5, beta=0.1):
+                        n_regimes=4, window_sizes=None, top_features=10, alpha=0.5, beta=0.1,
+                        sample_size=10000, sampling_method='sequential'):
         """
-        Identify volatility regimes in the given data.
+        Identify volatility regimes using a two-stage approach:
+        1. Learn patterns from a representative sample
+        2. Apply patterns to the full dataset
         
         Parameters:
             df (pd.DataFrame): Input data
@@ -37,44 +44,150 @@ class VolatilityRegimesIdentifier:
             top_features (int): Number of top features to use
             alpha (float): Weight for temporal component
             beta (float): Decay rate for temporal distance
+            sample_size (int): Size of the sample to use for pattern learning
+            sampling_method (str): Method to use for sampling ('sequential' or 'chunks')
         """
-        print("Beginning volatility regime detection...")
+        print("Beginning two-stage volatility regime detection...")
         
-        # Initialize analyzer if not already done
-        if self.analyzer is None:
-            self.analyzer = VolatilityRegimeAnalyzer(
-                df=df,
-                timestamp_col=timestamp_col,
-                price_col=price_col,
-                volume_col=volume_col,
-                volatility_col=volatility_col
-            )
+        # Store parameters
+        self.sample_size = min(sample_size, len(df))
+        self.window_sizes = window_sizes if window_sizes is not None else [10, 30, 50]
         
-        # Compute and enhance features
-        self.analyzer.compute_features(window_sizes=window_sizes)
-        self.analyzer.enhance_features(n_features=top_features)
+        # Stage 1: Sample and Learn Patterns
+        print("\n=== Stage 1: Learning Patterns from Sample ===")
+        self.sampled_data = self._sample_data(df, sampling_method)
         
-        # Detect regimes
-        self.analyzer.detect_regimes(
-            n_regimes=n_regimes,
-            alpha=alpha,
-            beta=beta
+        # Initialize analyzer with sampled data
+        self.analyzer = VolatilityRegimeAnalyzer(
+            df=self.sampled_data,
+            timestamp_col=timestamp_col,
+            price_col=price_col,
+            volume_col=volume_col,
+            volatility_col=volatility_col
         )
         
-        # Get regime results and store them
-        self.regimes = self.analyzer.get_regime_labels()
+        # Compute and enhance features on sample
+        print("\n--- STEP 1: Computing Features ---")
+        self.analyzer.compute_features(window_sizes=self.window_sizes)
+        print("\n--- STEP 2: Enhancing Features ---")
+        self.analyzer.enhance_features(n_features=top_features)
+        
+        # Detect regimes on sample
+        print("\n--- STEP 3: Detecting Regimes ---")
+        self.regimes = self.analyzer.detect_regimes(
+            n_regimes=n_regimes,
+            alpha=alpha,
+            beta=beta,
+            create_mapper=True,  # Ensure mapper graph is created
+            compute_homology=True  # Ensure persistent homology is computed
+        )
+        
+        # Verify model is trained
+        if self.regimes is None:
+            raise ValueError("Failed to train regime detection model on sample data")
+            
+        # Analyze regimes to get statistics
+        self.analyzer.regime_analysis = self.analyzer.tda.analyze_regimes()
+        
+        # Stage 2: Apply Patterns to Full Dataset
+        print("\n=== Stage 2: Applying Patterns to Full Dataset ===")
+        df_with_regimes = self._apply_patterns_to_full_dataset(
+            df, timestamp_col, price_col, volume_col, volatility_col
+        )
         
         # Calculate and store regime statistics
-        df_with_regimes = df.copy()
-        df_with_regimes['regime'] = self.regimes
+        self._calculate_regime_statistics(df_with_regimes, volatility_col, timestamp_col)
         
-        # Calculate regime statistics
+        return df_with_regimes
+    
+    def _sample_data(self, df, sampling_method):
+        """
+        Sample data using the specified method, preserving sequential order.
+        
+        Parameters:
+            df (pd.DataFrame): Input data
+            sampling_method (str): Method to use for sampling
+            
+        Returns:
+            pd.DataFrame: Sampled data
+        """
+        if sampling_method == 'sequential':
+            # Take the first sample_size points
+            sampled = df.iloc[:self.sample_size].copy()
+        else:  # Default to sequential chunks
+            # Take evenly spaced chunks to cover different time periods
+            chunk_size = self.sample_size // 10
+            total_size = len(df)
+            step = total_size // 10
+            
+            chunks = []
+            for i in range(0, total_size, step):
+                if len(chunks) >= 10:  # Ensure we only get 10 chunks
+                    break
+                chunk = df.iloc[i:i+chunk_size].copy()
+                chunks.append(chunk)
+            
+            sampled = pd.concat(chunks, ignore_index=True)
+        
+        return sampled
+    
+    def _apply_patterns_to_full_dataset(self, df, timestamp_col, price_col, volume_col, volatility_col):
+        """
+        Apply learned patterns to the full dataset.
+        
+        Parameters:
+            df (pd.DataFrame): Full dataset
+            timestamp_col (str): Name of timestamp column
+            price_col (str): Name of price column
+            volume_col (str): Name of volume column
+            volatility_col (str): Name of volatility column
+            
+        Returns:
+            pd.DataFrame: Full dataset with regime labels
+        """
+        print("Applying learned patterns to full dataset...")
+        
+        # Process the full dataset through the same pipeline
+        full_analyzer = VolatilityRegimeAnalyzer(
+            df=df,
+            timestamp_col=timestamp_col,
+            price_col=price_col,
+            volume_col=volume_col,
+            volatility_col=volatility_col
+        )
+        
+        # Use the same feature computation and enhancement as the sample
+        print("Computing microstructure features...")
+        full_analyzer.compute_features(window_sizes=self.window_sizes)
+        full_analyzer.enhance_features(n_features=len(self.analyzer.enhanced_feature_names))
+        
+        # Copy trained model components to the new analyzer
+        full_analyzer.regime_labels = self.regimes
+        full_analyzer.tda = self.analyzer.tda
+        full_analyzer.regime_analysis = self.analyzer.regime_analysis
+        
+        # Use the learned patterns to label the full dataset
+        df_with_regimes = full_analyzer.label_new_data(df)
+        
+        return df_with_regimes
+    
+    def _calculate_regime_statistics(self, df_with_regimes, volatility_col, timestamp_col):
+        """
+        Calculate statistics for the identified regimes.
+        
+        Parameters:
+            df_with_regimes (pd.DataFrame): Data with regime labels
+            volatility_col (str): Name of volatility column
+            timestamp_col (str): Name of timestamp column
+        """
+        n_regimes = len(np.unique(df_with_regimes['regime']))
+        
+        # Calculate statistics for each regime
         regime_stats = {
             'regime_stats': [],
             'transition_probs': np.zeros((n_regimes, n_regimes))
         }
         
-        # Calculate statistics for each regime
         for regime in range(n_regimes):
             regime_data = df_with_regimes[df_with_regimes['regime'] == regime]
             
@@ -94,9 +207,9 @@ class VolatilityRegimesIdentifier:
             regime_stats['regime_stats'].append(stats)
         
         # Calculate transition probabilities
-        for i in range(len(self.regimes) - 1):
-            current_regime = self.regimes[i]
-            next_regime = self.regimes[i + 1]
+        for i in range(len(df_with_regimes['regime']) - 1):
+            current_regime = df_with_regimes['regime'].iloc[i]
+            next_regime = df_with_regimes['regime'].iloc[i + 1]
             regime_stats['transition_probs'][current_regime, next_regime] += 1
         
         # Normalize transition probabilities
@@ -107,8 +220,6 @@ class VolatilityRegimesIdentifier:
         
         self.regime_stats = regime_stats
         
-        return df_with_regimes
-    
     def visualize_regimes(self, output_dir='./volatility_regimes'):
         """
         Visualize the identified regimes.

@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.neighbors import KernelDensity
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler
+from scipy.stats import kurtosis
 import warnings
 
 # Suppress warnings
@@ -70,99 +71,138 @@ class InformationTheoryEnhancer:
         self.scaler = StandardScaler()
         self.scaled_data = self.scaler.fit_transform(self.clean_data)
         
+    def _adjust_for_heavy_tails(self, x):
+        """
+        Adjust bandwidth and weights for heavy-tailed distributions.
+        """
+        # Compute excess kurtosis
+        k = kurtosis(x.ravel())
+        
+        # Adjust bandwidth based on kurtosis
+        tail_factor = np.log1p(abs(k)) if k > 0 else 1.0
+        
+        # Create weight adjustments for tails
+        weights = np.ones_like(x.ravel())
+        std = np.std(x)
+        tail_mask = np.abs(x.ravel()) > 2 * std
+        weights[tail_mask] = tail_factor
+        
+        return tail_factor, weights
+
     def estimate_shannon_entropy(self, bandwidth_method='silverman'):
         """
-        Estimate Shannon entropy for each feature dimension using kernel density estimation.
-        
-        H(X_j) = -∑_i p(x_{j,i}) log p(x_{j,i})
-        
-        Parameters:
-        -----------
-        bandwidth_method : str
-            Method to determine kernel bandwidth: 'silverman' or 'scott'
-            
-        Returns:
-        --------
-        self
+        Estimate Shannon entropy using cosine kernel with heavy-tail emphasis.
         """
-        print("Estimating Shannon entropy for each feature...")
+        print("Estimating Shannon entropy with heavy-tail adjustment...")
         
-        # Initialize entropy array
         self.entropy = np.zeros(self.n_features)
         
-        # Estimate entropy for each feature
         for j in range(self.n_features):
             x = self.scaled_data[:, j].reshape(-1, 1)
             
-            # Determine bandwidth using rule of thumb
+            # Adjust for heavy tails
+            tail_factor, weights = self._adjust_for_heavy_tails(x)
+            
+            # Determine base bandwidth
             if bandwidth_method == 'silverman':
-                # Silverman's rule: h = 1.06 * σ * n^(-1/5)
                 bw = 1.06 * np.std(x) * self.n_samples**(-1/5)
             else:
-                # Scott's rule: h = 3.49 * σ * n^(-1/3)
                 bw = 3.49 * np.std(x) * self.n_samples**(-1/3)
-                
-            # Fit kernel density estimator
-            kde = KernelDensity(bandwidth=bw, kernel='gaussian')
-            kde.fit(x)
             
-            # Evaluate density at sample points
-            log_dens = kde.score_samples(x)
+            # Adjust bandwidth for heavy tails
+            bw *= tail_factor
+            
+            # Apply weights by replicating points in tails
+            x_weighted = []
+            for i, point in enumerate(x):
+                # Add more copies of points in the tails
+                n_copies = int(np.ceil(weights[i]))
+                x_weighted.extend([point] * n_copies)
+            x_weighted = np.array(x_weighted).reshape(-1, 1)
+            
+            # Fit kernel density with cosine kernel on weighted points
+            kde = KernelDensity(
+                bandwidth=bw,
+                kernel='cosine'  # Using cosine kernel for better tail behavior
+            )
+            kde.fit(x_weighted)
+            
+            # Evaluate density at sample points with more points in tails
+            std = np.std(x)
+            eval_points = np.linspace(x.min() - std * tail_factor, 
+                                    x.max() + std * tail_factor,
+                                    num=min(1000, self.n_samples))
+            eval_points = eval_points.reshape(-1, 1)
+            
+            log_dens = kde.score_samples(eval_points)
             dens = np.exp(log_dens)
             
-            # Normalize densities to ensure they sum to 1
+            # Normalize densities
             dens = dens / np.sum(dens)
             
-            # Calculate entropy (avoiding log(0))
+            # Calculate entropy with tail emphasis
             entropy_j = -np.sum(dens * np.log(dens + 1e-10))
             self.entropy[j] = entropy_j
             
         return self
         
-    def compute_kl_divergence(self, window_size=100):
+    def compute_kl_divergence(self, window_size=100, gap_size=20):
         """
-        Compute Kullback-Leibler divergence between local and global distributions.
+        Compute Kullback-Leibler divergence between current and recent distributions.
         
-        D_KL(P^t_local || P_global) = ∑_i P^t_local(i) log[P^t_local(i)/P_global(i)]
+        D_KL(P^t_current || P^t_recent) = ∑_i P^t_current(i) log[P^t_current(i)/P^t_recent(i)]
         
         Parameters:
         -----------
         window_size : int
-            Size of local window for computing local distributions
+            Size of window for computing distributions
+        gap_size : int
+            Size of gap between current and recent windows
             
         Returns:
         --------
         numpy.ndarray
             Array of shape (n_samples, n_features) containing KL divergence values
         """
-        print("Computing KL divergence between local and global distributions...")
+        print("Computing KL divergence between current and recent windows...")
         
         kl_divergence = np.zeros((self.n_samples, self.n_features))
         
         for j in range(self.n_features):
             x = self.scaled_data[:, j]
             
-            # Compute global distribution (using histogram)
-            global_hist, bin_edges = np.histogram(x, bins=20, density=True)
-            global_hist = global_hist + 1e-10  # Avoid division by zero
-            
-            # Compute local distributions for each window
-            for i in range(self.n_samples):
-                start_idx = max(0, i - window_size // 2)
-                end_idx = min(self.n_samples, i + window_size // 2)
+            for i in range(window_size + gap_size, self.n_samples):
+                # Current window
+                current_window = x[i - window_size:i]
+                # Recent window (separated by gap)
+                recent_window = x[i - window_size - gap_size:i - gap_size]
                 
-                local_x = x[start_idx:end_idx]
-                
-                if len(local_x) < 5:
+                if len(current_window) < 5 or len(recent_window) < 5:
                     kl_divergence[i, j] = 0
                     continue
                 
-                # Compute local histogram with same bins as global
-                local_hist, _ = np.histogram(local_x, bins=bin_edges, density=True)
-                local_hist = local_hist + 1e-10  # Avoid division by zero
+                # Compute adaptive bins based on data characteristics
+                n_bins = max(5, min(20, int(np.sqrt(len(current_window) / 5))))
+                bin_edges = np.percentile(
+                    np.concatenate([current_window, recent_window]),
+                    np.linspace(0, 100, n_bins + 1)
+                )
                 
-                # Calculate KL divergence
-                kl_div = np.sum(local_hist * np.log(local_hist / global_hist))
+                # Compute histograms with adaptive bins
+                current_hist, _ = np.histogram(current_window, bins=bin_edges, density=True)
+                recent_hist, _ = np.histogram(recent_window, bins=bin_edges, density=True)
+                
+                # Add small constant to avoid division by zero
+                current_hist = current_hist + 1e-10
+                recent_hist = recent_hist + 1e-10
+                
+                # Normalize histograms
+                current_hist = current_hist / np.sum(current_hist)
+                recent_hist = recent_hist / np.sum(recent_hist)
+                
+                # Calculate KL divergence with tail emphasis
+                tail_factor = np.log1p(abs(kurtosis(current_window))) if kurtosis(current_window) > 0 else 1.0
+                kl_div = np.sum(current_hist * np.log(current_hist / recent_hist)) * tail_factor
                 kl_divergence[i, j] = kl_div
                 
         # Store as class attribute and return
@@ -287,14 +327,16 @@ class InformationTheoryEnhancer:
         
     def compute_mutual_information_matrix(self):
         """
-        Compute mutual information between all pairs of features using a simplified approach.
+        Compute mutual information between all pairs of features using KDE.
+        
+        I(X;Y) = ∫∫ p(x,y) log(p(x,y)/(p(x)p(y))) dx dy
         
         Returns:
         --------
         numpy.ndarray
             Array of shape (n_features, n_features) containing mutual information values
         """
-        print("Computing mutual information matrix...")
+        print("Computing mutual information matrix using KDE...")
         
         # Initialize mutual information matrix
         mi_matrix = np.zeros((self.n_features, self.n_features))
@@ -303,24 +345,56 @@ class InformationTheoryEnhancer:
         for i in range(self.n_features):
             mi_matrix[i, i] = self.entropy[i]
         
-        # Use correlation coefficient as an approximation for MI for all non-diagonal elements
-        # This avoids numerical issues with binning and is faster
-        if self.n_samples > 1:
-            corr_matrix = np.corrcoef(self.scaled_data.T)
-            
-            # Convert correlation to mutual information approximation
-            # Using the formula for Gaussian variables: MI ≈ -0.5 * log(1 - ρ²)
-            for i in range(self.n_features):
-                for j in range(i+1, self.n_features):
-                    # Use correlation-based approximation
-                    rho = corr_matrix[i, j]
-                    # Avoid numerical issues with perfect correlation
-                    rho_squared = min(rho**2, 0.999)
-                    mi = -0.5 * np.log(1 - rho_squared)
-                    
-                    # Make symmetric
-                    mi_matrix[i, j] = mi
-                    mi_matrix[j, i] = mi
+        # Compute MI for non-diagonal elements using KDE
+        for i in range(self.n_features):
+            for j in range(i+1, self.n_features):
+                x = self.scaled_data[:, i].reshape(-1, 1)
+                y = self.scaled_data[:, j].reshape(-1, 1)
+                
+                # Adjust for heavy tails in both variables
+                x_tail_factor, x_weights = self._adjust_for_heavy_tails(x)
+                y_tail_factor, y_weights = self._adjust_for_heavy_tails(y)
+                
+                # Compute bandwidths
+                bw_x = 1.06 * np.std(x) * self.n_samples**(-1/5) * x_tail_factor
+                bw_y = 1.06 * np.std(y) * self.n_samples**(-1/5) * y_tail_factor
+                
+                # Create weighted samples by replication
+                x_weighted = []
+                y_weighted = []
+                for k, (x_point, y_point) in enumerate(zip(x, y)):
+                    n_copies = int(np.ceil(max(x_weights[k], y_weights[k])))
+                    x_weighted.extend([x_point] * n_copies)
+                    y_weighted.extend([y_point] * n_copies)
+                
+                x_weighted = np.array(x_weighted).reshape(-1, 1)
+                y_weighted = np.array(y_weighted).reshape(-1, 1)
+                
+                # Fit marginal KDEs
+                kde_x = KernelDensity(bandwidth=bw_x, kernel='cosine').fit(x_weighted)
+                kde_y = KernelDensity(bandwidth=bw_y, kernel='cosine').fit(y_weighted)
+                
+                # Fit joint KDE
+                xy_weighted = np.column_stack([x_weighted, y_weighted])
+                bw_joint = np.mean([bw_x, bw_y])
+                kde_joint = KernelDensity(bandwidth=bw_joint, kernel='cosine').fit(xy_weighted)
+                
+                # Evaluate densities at original sample points
+                xy = np.column_stack([x, y])
+                log_px = kde_x.score_samples(x)
+                log_py = kde_y.score_samples(y)
+                log_pxy = kde_joint.score_samples(xy)
+                
+                # Compute mutual information
+                mi = np.mean(log_pxy - log_px - log_py)
+                
+                # Apply tail emphasis
+                tail_emphasis = np.maximum(x_tail_factor, y_tail_factor)
+                mi *= tail_emphasis
+                
+                # Make symmetric
+                mi_matrix[i, j] = mi
+                mi_matrix[j, i] = mi
         
         # Store as class attribute and return
         self.mi_matrix = mi_matrix
@@ -456,4 +530,86 @@ class InformationTheoryEnhancer:
             enhanced_features = np.column_stack([enhanced_features, kl_features])
             enhanced_names.extend([f"{name}_kl" for name in enhanced_names[:len(top_indices)]])
             
-        return enhanced_features, enhanced_names 
+        return enhanced_features, enhanced_names
+    
+    def derive_high_signal_features(self, window_size=100, min_snr=2.0):
+        """
+        Derive features with high signal-to-noise ratio using information theory measures.
+        
+        Parameters:
+        -----------
+        window_size : int
+            Window size for computing local statistics
+        min_snr : float
+            Minimum signal-to-noise ratio threshold
+            
+        Returns:
+        --------
+        tuple
+            (derived_features, feature_names)
+        """
+        print("Deriving high signal-to-noise features...")
+        
+        if self.mi_matrix is None:
+            self.compute_mutual_information_matrix()
+            
+        if not hasattr(self, 'kl_divergence'):
+            self.compute_kl_divergence(window_size=window_size)
+            
+        derived_features = []
+        derived_names = []
+        
+        # Compute signal-to-noise ratio for each feature
+        for j in range(self.n_features):
+            # Signal strength: mutual information with target
+            signal = self.mi_matrix[j, self.target_col_idx]
+            
+            # Noise estimate: average MI with non-target features
+            noise_mi = np.delete(self.mi_matrix[j, :], [j, self.target_col_idx])
+            noise = np.mean(noise_mi)
+            
+            # Compute SNR
+            snr = signal / (noise + 1e-10)
+            
+            if snr >= min_snr:
+                # Get the raw feature
+                feature = self.scaled_data[:, j]
+                
+                # Compute local information measures
+                local_kl = self.kl_divergence[:, j]
+                
+                # Create enhanced feature variations
+                # 1. KL-weighted feature
+                kl_weighted = feature * (1 + np.log1p(local_kl))
+                
+                # 2. Tail-emphasized feature
+                tail_factor, _ = self._adjust_for_heavy_tails(feature.reshape(-1, 1))
+                tail_weighted = feature * tail_factor
+                
+                # 3. Information-ratio feature
+                info_ratio = signal / (np.sum(noise_mi) + 1e-10)
+                info_weighted = feature * info_ratio
+                
+                # Add derived features
+                derived_features.extend([
+                    kl_weighted,
+                    tail_weighted,
+                    info_weighted
+                ])
+                
+                base_name = self.feature_names[j]
+                derived_names.extend([
+                    f"{base_name}_kl_weighted",
+                    f"{base_name}_tail_weighted",
+                    f"{base_name}_info_weighted"
+                ])
+                
+        if not derived_features:
+            print("No features met the minimum SNR threshold")
+            return np.array([]), []
+            
+        # Combine and normalize derived features
+        derived_features = np.column_stack(derived_features)
+        derived_features = StandardScaler().fit_transform(derived_features)
+        
+        return derived_features, derived_names 

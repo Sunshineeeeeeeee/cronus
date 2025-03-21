@@ -117,19 +117,24 @@ class VolatilityRegimesIdentifier:
         -----------
         output_dir : str
             Directory to save visualizations
-            
-        Returns:
-        --------
-        None
         """
-        if self.analyzer is None or self.regimes is None:
-            raise ValueError("You must identify regimes first")
+        if self.regime_labels is None:
+            raise ValueError("Regimes must be identified first")
             
         # Create output directory
         os.makedirs(output_dir, exist_ok=True)
         
-        # Generate visualizations
-        self.analyzer.visualize_results(output_dir=output_dir)
+        # Get price data from features
+        price_data = self.features[:, self.price_col_idx]
+        
+        # Plot price with regimes using the TDA's specialized method
+        self.analyzer.plot_price_with_regimes(
+            price_data=price_data,
+            output_dir=output_dir,
+            filename_prefix='volatility_'
+        )
+        
+        print(f"Regime visualizations saved to {output_dir}/")
         
     def get_regime_statistics(self):
         """
@@ -222,6 +227,58 @@ class VolatilityRegimesIdentifier:
         identifier.regime_stats = identifier.analyzer.get_regime_analysis()
         
         return identifier
+
+    def plot_price_by_regimes(self, df, price_col, output_dir='./volatility_regimes_results'):
+        """
+        Plot asset price colored by volatility regime, similar to the example plot.
+        
+        Parameters:
+        -----------
+        df : pandas.DataFrame
+            DataFrame containing price data and regime labels
+        price_col : str
+            Name of the price column
+        output_dir : str
+            Directory to save the plot
+        """
+        if 'regime' not in df.columns:
+            raise ValueError("DataFrame must contain 'regime' column. Run identify_regimes first.")
+            
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Create the plot
+        plt.figure(figsize=(15, 8))
+        
+        # Plot price for each regime with different colors
+        unique_regimes = sorted(df['regime'].unique())
+        colors = plt.cm.tab10(np.linspace(0, 1, len(unique_regimes)))
+        
+        for regime, color in zip(unique_regimes, colors):
+            mask = df['regime'] == regime
+            regime_data = df[mask]
+            
+            plt.plot(regime_data.index, regime_data[price_col], 
+                    marker='o', markersize=4, linestyle='-', linewidth=1,
+                    color=color, label=f'Regime {regime + 1}',
+                    alpha=0.8)
+        
+        # Customize the plot
+        plt.title('Asset Price Colored by Volatility Regime', pad=20)
+        plt.xlabel('Time')
+        plt.ylabel('Price')
+        plt.grid(True, alpha=0.3)
+        plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
+        
+        # Adjust layout to prevent label cutoff
+        plt.tight_layout()
+        
+        # Save the plot
+        plt.savefig(os.path.join(output_dir, 'price_by_regimes.png'), 
+                    dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"Price by regimes plot saved to {output_dir}/price_by_regimes.png")
 
 
 # Example usage

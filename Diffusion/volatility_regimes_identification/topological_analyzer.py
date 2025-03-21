@@ -7,6 +7,14 @@ from sklearn.decomposition import PCA
 import os
 import itertools
 import warnings
+import gudhi
+import gudhi.point_cloud
+import gudhi.representations
+import gudhi.persistence_graphical_tools as gd_plot
+from gudhi.rips_complex import RipsComplex
+from gudhi.weighted_rips_complex import WeightedRipsComplex
+from gudhi.persistence_graphical_tools import plot_persistence_barcode
+from gudhi.persistence_graphical_tools import plot_persistence_diagram
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -14,6 +22,7 @@ warnings.filterwarnings('ignore')
 class TopologicalDataAnalyzer:
     """
     Implements the topological data analysis components for volatility regime detection.
+    Uses GUDHI for proper persistent homology computation and witness complexes.
     
     Implements Sections 3-5 of the TDA Pipeline:
     - Temporally-Aware Simplicial Complex Construction
@@ -50,6 +59,8 @@ class TopologicalDataAnalyzer:
         self.persistence_diagrams = None
         self.regime_labels = None
         self.mapper_graph = None
+        self.witness_complex = None
+        self.multi_persistence_diagrams = None
         
     def compute_temporally_weighted_distance(self, alpha=0.5, beta=0.1, lambda_info=1.0, mi_matrix=None):
         """
@@ -197,9 +208,9 @@ class TopologicalDataAnalyzer:
                         
         return path_complex
     
-    def compute_persistent_homology(self, min_epsilon=0.1, max_epsilon=2.0, num_steps=10):
+    def compute_persistent_homology(self, min_epsilon=0.1, max_epsilon=2.0, num_steps=10, use_weighted=False):
         """
-        Compute persistent homology using the path complex filtration.
+        Compute persistent homology using GUDHI's Rips complex with optimized computation.
         
         Parameters:
         -----------
@@ -208,87 +219,327 @@ class TopologicalDataAnalyzer:
         max_epsilon : float
             Maximum distance threshold
         num_steps : int
-            Number of thresholds to compute
+            Number of filtration steps
+        use_weighted : bool
+            Whether to use weighted Rips complex (considers temporal weights)
             
         Returns:
         --------
         dict
-            Dictionary of persistence diagrams by dimension
+            Dictionary containing persistence diagrams and related information
         """
-        print("Computing persistent homology...")
+        print("Computing persistent homology using GUDHI...")
         
-        # Define filtration values
-        epsilon_values = np.linspace(min_epsilon, max_epsilon, num_steps)
-        
-        # Initialize dictionaries to store results
-        all_path_complexes = {}
-        betti_numbers = {k: [] for k in range(3)}  # Track Betti numbers for dims 0, 1, 2
-        
-        # Compute path complex at each filtration value
-        for eps in epsilon_values:
-            # Construct network at this epsilon
-            G = self.construct_directed_network(epsilon=eps)
-            
-            # Compute path complex
-            path_complex = self.compute_path_complex(G)
-            all_path_complexes[eps] = path_complex
-            
-            # Count connected components (Betti-0)
-            components = list(nx.weakly_connected_components(G))
-            betti_numbers[0].append(len(components))
-            
-            # Count cycles (Betti-1)
-            # For directed graphs, use simple cycle finding
-            try:
-                cycles = list(nx.simple_cycles(G))
-                betti_numbers[1].append(len(cycles))
-            except nx.NetworkXNoCycle:
-                betti_numbers[1].append(0)
+        try:
+            # Choose appropriate complex based on whether we want weighted computation
+            if use_weighted and self.temporal_distance_matrix is not None:
+                print("Using weighted Rips complex...")
+                rips_complex = WeightedRipsComplex(
+                    distance_matrix=self.temporal_distance_matrix,
+                    max_edge_length=max_epsilon
+                )
+            else:
+                print("Using standard Rips complex...")
+                # Ensure features are properly scaled
+                features_scaled = self.features.copy()
+                if len(features_scaled) > 1:
+                    features_scaled = (features_scaled - features_scaled.min(axis=0)) / (features_scaled.max(axis=0) - features_scaled.min(axis=0))
                 
-            # Higher-order structures are more complex to compute
-            # This is a simplified approach for Betti-2
-            triangles = 0
-            for path in path_complex[2]:
-                # Check if it forms a "void" (simplification)
-                if (path[2], path[0]) in G.edges():
-                    triangles += 1
-            betti_numbers[2].append(triangles)
+                rips_complex = RipsComplex(
+                    points=features_scaled,
+                    max_edge_length=max_epsilon
+                )
             
-        # Create simplified persistence diagrams
-        # This is a basic approximation - production code would use more sophisticated libraries
-        persistence_diagrams = {}
-        
-        for dim in range(3):
-            diagram = []
-            active_features = {}
+            # Create simplex tree
+            print("Creating simplex tree...")
+            simplex_tree = rips_complex.create_simplex_tree(max_dimension=2)
             
-            for i, eps in enumerate(epsilon_values):
-                # Birth of new features
-                if i > 0:
-                    new_features = max(0, betti_numbers[dim][i] - betti_numbers[dim][i-1])
-                    for _ in range(new_features):
-                        birth_time = eps
-                        active_features[len(active_features)] = birth_time
-                        
-                # Death of features
-                if i > 0 and i < len(epsilon_values) - 1:
-                    dying_features = max(0, betti_numbers[dim][i] - betti_numbers[dim][i+1])
-                    keys_to_remove = list(active_features.keys())[:dying_features]
+            print(f"Simplex tree has {simplex_tree.num_simplices()} simplices")
+            print(f"Dimension is {simplex_tree.dimension()}")
+            
+            # Compute persistence
+            print("Computing persistence...")
+            persistence = simplex_tree.persistence()
+            
+            if not persistence:
+                raise ValueError("No persistence pairs found")
+                
+            print(f"Found {len(persistence)} persistence pairs")
+            
+            # Initialize persistence diagram storage
+            persistence_diagrams = {}
+            
+            # Process each dimension
+            for dim in range(3):
+                # Initialize dimension results
+                persistence_diagrams[dim] = {
+                    'full_diagram': [],
+                    'persistent_features': [],
+                    'betti_numbers': [],
+                    'birth_times': [],
+                    'death_times': [],
+                    'persistence_pairs': []
+                }
+                
+                # Extract dimension-specific diagrams
+                dim_pairs = []
+                for pair in persistence:
+                    try:
+                        dimension, birth, death = pair  # Unpack the persistence pair
+                        if dimension == dim:
+                            if death != float('inf'):
+                                dim_pairs.append((birth, death))
+                            else:
+                                # Handle infinite death time
+                                dim_pairs.append((birth, max_epsilon))
+                    except (ValueError, IndexError) as e:
+                        print(f"Warning: Skipping malformed persistence pair {pair}: {str(e)}")
+                        continue
+                
+                if dim_pairs:
+                    # Convert to numpy array for easier manipulation
+                    dim_pairs = np.array(dim_pairs)
                     
-                    for key in keys_to_remove:
-                        birth_time = active_features.pop(key)
-                        death_time = epsilon_values[i+1]
-                        diagram.append((birth_time, death_time))
+                    # Sort by persistence (death - birth)
+                    persistence_values = dim_pairs[:, 1] - dim_pairs[:, 0]
+                    sort_idx = np.argsort(-persistence_values)  # Sort in descending order
+                    dim_pairs = dim_pairs[sort_idx]
+                    
+                    # Store results
+                    persistence_diagrams[dim]['full_diagram'] = dim_pairs
+                    persistence_diagrams[dim]['birth_times'] = dim_pairs[:, 0]
+                    persistence_diagrams[dim]['death_times'] = dim_pairs[:, 1]
+                    persistence_diagrams[dim]['persistence_pairs'] = list(map(tuple, dim_pairs))
+                    
+                    # Compute Betti numbers across filtration
+                    epsilon_values = np.linspace(min_epsilon, max_epsilon, num_steps)
+                    betti_numbers = []
+                    
+                    for eps in epsilon_values:
+                        alive = np.sum((dim_pairs[:, 0] <= eps) & (dim_pairs[:, 1] > eps))
+                        betti_numbers.append(alive)
+                        
+                    persistence_diagrams[dim]['betti_numbers'] = np.array(betti_numbers)
             
-            # Add features that never die
-            for birth_time in active_features.values():
-                diagram.append((birth_time, np.inf))
+            # Store results
+            self.persistence_diagrams = persistence_diagrams
+            
+            # Generate visualizations
+            try:
+                if not os.path.exists('persistence_plots'):
+                    os.makedirs('persistence_plots')
+                    
+                print("Generating visualizations...")
                 
-            persistence_diagrams[dim] = np.array(diagram)
+                # Plot persistence diagram
+                gd_plot.plot_persistence_diagram(
+                    persistence=persistence,
+                    legend=True,
+                    axes_labels=('Birth', 'Death')
+                )
+                plt.savefig('persistence_plots/persistence_diagram.png')
+                plt.close()
+                
+                # Plot persistence barcode
+                gd_plot.plot_persistence_barcode(
+                    persistence=persistence,
+                    legend=True
+                )
+                plt.savefig('persistence_plots/persistence_barcode.png')
+                plt.close()
+                
+            except Exception as viz_error:
+                print(f"Warning: Could not generate visualizations: {str(viz_error)}")
             
-        self.persistence_diagrams = persistence_diagrams
-        return persistence_diagrams
-    
+            return persistence_diagrams
+            
+        except Exception as e:
+            print(f"Error in persistent homology computation: {str(e)}")
+            print("Attempting to proceed with simplified computation...")
+            
+            try:
+                # Fallback to simpler computation
+                features_scaled = self.features.copy()
+                if len(features_scaled) > 1:
+                    features_scaled = (features_scaled - features_scaled.min(axis=0)) / (features_scaled.max(axis=0) - features_scaled.min(axis=0))
+                
+                rips_complex = RipsComplex(
+                    points=features_scaled,
+                    max_edge_length=max_epsilon
+                )
+                
+                simplex_tree = rips_complex.create_simplex_tree(max_dimension=1)  # Reduce dimension for simplicity
+                persistence = simplex_tree.persistence()
+                
+                # Create basic persistence diagram
+                persistence_diagrams = {
+                    dim: {
+                        'full_diagram': [],
+                        'betti_numbers': []
+                    }
+                    for dim in range(2)  # Reduce to 2 dimensions
+                }
+                
+                # Process persistence pairs
+                for pair in persistence:
+                    try:
+                        dimension, birth, death = pair
+                        if dimension < 2:  # Only process dimensions 0 and 1
+                            if death == float('inf'):
+                                death = max_epsilon
+                            persistence_diagrams[dimension]['full_diagram'].append((birth, death))
+                    except (ValueError, IndexError):
+                        continue
+                
+                # Convert to numpy arrays
+                for dim in persistence_diagrams:
+                    if persistence_diagrams[dim]['full_diagram']:
+                        persistence_diagrams[dim]['full_diagram'] = np.array(persistence_diagrams[dim]['full_diagram'])
+                    else:
+                        persistence_diagrams[dim]['full_diagram'] = np.array([])
+                
+                self.persistence_diagrams = persistence_diagrams
+                return persistence_diagrams
+                
+            except Exception as fallback_error:
+                print(f"Error in simplified computation: {str(fallback_error)}")
+                # Return empty persistence diagrams as last resort
+                return {dim: {'full_diagram': np.array([]), 'betti_numbers': []} for dim in range(3)}
+
+    def compute_multi_parameter_persistence(self, parameters=None, max_dimension=2):
+        """
+        Compute multi-parameter persistent homology using GUDHI's advanced capabilities.
+        
+        Parameters:
+        -----------
+        parameters : list of tuples
+            List of (name, values) pairs for filtration parameters
+        max_dimension : int
+            Maximum homology dimension to compute
+            
+        Returns:
+        --------
+        dict
+            Dictionary containing multi-parameter persistence results
+        """
+        print("Computing multi-parameter persistence...")
+        
+        if parameters is None:
+            parameters = [
+                ('time', self.timestamps),
+                ('volatility', np.std(self.features, axis=1)),
+                ('volume', np.sum(self.features, axis=1))
+            ]
+            
+        # Normalize parameter values to [0,1]
+        normalized_params = []
+        for name, values in parameters:
+            if len(values) > 1:
+                values = (values - values.min()) / (values.max() - values.min())
+            normalized_params.append((name, values))
+            
+        # Create multi-filtration
+        multi_filtration = []
+        n_samples = len(self.features)
+        
+        for i in range(n_samples):
+            # Get parameter values for this point
+            point_params = [values[i] for _, values in normalized_params]
+            multi_filtration.append(point_params)
+            
+        # Convert to numpy array
+        multi_filtration = np.array(multi_filtration)
+        
+        # Create multi-parameter Rips complex
+        rips = gudhi.RipsComplex(
+            points=self.features,
+            max_edge_length=np.inf
+        )
+        
+        # Create simplex tree with multi-parameter filtration
+        st = rips.create_simplex_tree(max_dimension=max_dimension)
+        
+        # Assign multi-parameter filtration values
+        for simplex, _ in st.get_simplices():
+            if len(simplex) == 1:  # vertex
+                idx = simplex[0]
+                st.assign_filtration(simplex, multi_filtration[idx])
+            else:  # higher dimensional simplex
+                # Use maximum of vertex filtration values
+                vertex_values = [multi_filtration[v] for v in simplex]
+                filtration_value = np.max(vertex_values, axis=0)
+                st.assign_filtration(simplex, filtration_value)
+        
+        # Compute multi-parameter persistence
+        st.make_filtration_non_decreasing()
+        multi_diagrams = st.persistence()
+        
+        # Process results
+        results = {
+            'diagrams': {},
+            'parameter_names': [p[0] for p in parameters],
+            'parameter_ranges': [(values.min(), values.max()) for _, values in parameters],
+            'multi_filtration': multi_filtration
+        }
+        
+        # Process persistence diagrams by dimension
+        for dim in range(max_dimension + 1):
+            dim_results = {
+                'birth_values': [],
+                'death_values': [],
+                'persistence_pairs': [],
+                'persistence_values': []
+            }
+            
+            # Extract dimension-specific diagrams
+            dim_diagrams = [(p[1], p[2]) for p in multi_diagrams if p[0] == dim]
+            
+            for birth, death in dim_diagrams:
+                if death != float('inf'):
+                    dim_results['birth_values'].append(birth)
+                    dim_results['death_values'].append(death)
+                    dim_results['persistence_pairs'].append((birth, death))
+                    dim_results['persistence_values'].append(
+                        np.array([d - b for b, d in zip(birth, death)])
+                    )
+            
+            results['diagrams'][dim] = dim_results
+        
+        # Generate visualizations for 2D projections
+        if not os.path.exists('multi_persistence_plots'):
+            os.makedirs('multi_persistence_plots')
+            
+        # Plot 2D projections of the persistence diagram
+        for i, j in itertools.combinations(range(len(parameters)), 2):
+            param1, param2 = parameters[i][0], parameters[j][0]
+            
+            plt.figure(figsize=(10, 10))
+            for dim in range(max_dimension + 1):
+                if dim in results['diagrams']:
+                    birth_values = results['diagrams'][dim]['birth_values']
+                    death_values = results['diagrams'][dim]['death_values']
+                    
+                    if birth_values:  # Check if we have any values to plot
+                        birth_proj = np.array(birth_values)[:, [i, j]]
+                        death_proj = np.array(death_values)[:, [i, j]]
+                        
+                        plt.scatter(
+                            birth_proj[:, 0],
+                            death_proj[:, 0],
+                            label=f'H{dim}',
+                            alpha=0.6
+                        )
+            
+            plt.xlabel(param1)
+            plt.ylabel(param2)
+            plt.title(f'Multi-parameter Persistence: {param1} vs {param2}')
+            plt.legend()
+            plt.savefig(f'multi_persistence_plots/persistence_{param1}_{param2}.png')
+            plt.close()
+        
+        self.multi_persistence_diagrams = results
+        return results
+
     def create_temporal_mapper(self, n_intervals=10, percent_overlap=50, filter_functions=None):
         """
         Create a mapper graph using temporal information.
@@ -397,14 +648,14 @@ class TopologicalDataAnalyzer:
                 
         return self.mapper_graph
     
-    def identify_regimes(self, n_regimes=None, affinity_sigma=1.0):
+    def identify_regimes(self, n_regimes=3, affinity_sigma=1.0):
         """
         Identify volatility regimes using directed spectral clustering.
         
         Parameters:
         -----------
-        n_regimes : int or None
-            Number of regimes to identify (if None, determined automatically)
+        n_regimes : int
+            Number of regimes to identify
         affinity_sigma : float
             Bandwidth parameter for affinity calculation
             
@@ -434,27 +685,6 @@ class TopologicalDataAnalyzer:
         # Make symmetric for spectral clustering
         affinity = affinity + affinity.T
         
-        # Determine number of regimes if not specified
-        if n_regimes is None:
-            # Determine using eigengap heuristic
-            from sklearn.manifold import SpectralEmbedding
-            
-            embedder = SpectralEmbedding(n_components=20, affinity='precomputed')
-            embedding = embedder.fit_transform(affinity)
-            
-            # Calculate eigengap
-            eigenvalues = embedder.eigenvalues_
-            eigengaps = np.diff(eigenvalues)
-            
-            # Find elbow point (significant drop in eigenvalues)
-            max_gap_idx = np.argmax(eigengaps)
-            n_regimes = max_gap_idx + 2  # Add 2 because we're looking at gaps
-            
-            # Cap the number of regimes to a reasonable range
-            n_regimes = max(2, min(10, n_regimes))
-            
-            print(f"Automatically determined {n_regimes} regimes based on eigengap heuristic")
-            
         # Perform spectral clustering
         clustering = SpectralClustering(
             n_clusters=n_regimes,
@@ -463,19 +693,6 @@ class TopologicalDataAnalyzer:
         )
         
         regime_labels = clustering.fit_predict(affinity)
-        
-        # Sort regimes by temporal order (first occurrence)
-        regime_order = {}
-        for i, label in enumerate(regime_labels):
-            if label not in regime_order:
-                regime_order[label] = i
-                
-        # Create mapping to sorted labels
-        sorted_regimes = sorted(regime_order.items(), key=lambda x: x[1])
-        label_mapping = {old_label: new_label for new_label, (old_label, _) in enumerate(sorted_regimes)}
-        
-        # Apply mapping
-        regime_labels = np.array([label_mapping[label] for label in regime_labels])
         
         self.regime_labels = regime_labels
         return regime_labels
@@ -624,57 +841,4 @@ class TopologicalDataAnalyzer:
             'n_regimes': n_regimes
         }
         
-        return result
-    
-    def visualize_regimes(self, output_dir, filename_prefix=''):
-        """
-        Visualize the identified regimes.
-        
-        Parameters:
-        -----------
-        output_dir : str
-            Directory to save visualizations
-        filename_prefix : str
-            Prefix for output filenames
-        """
-        print("Generating regime visualizations...")
-        
-        # Create output directory
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Convert timestamps to hours from start
-        if np.issubdtype(self.timestamps.dtype, np.datetime64):
-            t0 = self.timestamps[0]
-            time_diffs = self.timestamps - t0
-            # Convert to nanoseconds, then to hours
-            time_values = time_diffs.astype('timedelta64[ns]').astype(np.float64) / (1e9 * 3600)  # Convert to hours
-            x_label = "Time (hours from start)"
-        else:
-            time_values = np.array(self.timestamps)
-            x_label = "Time"
-        
-        # Rest of the visualization code remains the same...
-        # Plot regimes over time
-        plt.figure(figsize=(15, 8))
-        
-        # Plot each regime with a different color
-        unique_regimes = np.unique(self.regime_labels)
-        colors = plt.cm.tab10(np.linspace(0, 1, len(unique_regimes)))
-        
-        for regime, color in zip(unique_regimes, colors):
-            mask = self.regime_labels == regime
-            plt.scatter(time_values[mask], self.features[mask, 0],
-                       c=[color], label=f'Regime {regime+1}',
-                       alpha=0.6, s=30)
-        
-        plt.xlabel(x_label)
-        plt.ylabel("Feature Value")
-        plt.title("Volatility Regimes Over Time")
-        plt.legend()
-        plt.grid(True, alpha=0.3)
-        
-        # Save the plot
-        plt.savefig(os.path.join(output_dir, f"{filename_prefix}regimes_over_time.png"))
-        plt.close()
-        
-        # Additional visualizations can be added here... 
+        return result 

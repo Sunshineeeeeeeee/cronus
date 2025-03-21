@@ -212,80 +212,98 @@ class MicrostructureFeatureEngine:
             
         return self
         
-    def compute_momentum_features(self, window_sizes=[10, 50, 100]):
+    def compute_dmi_features(self, window_sizes=[10, 50, 100]):
         """
-        Compute momentum features including:
-        - Short-term momentum
-        - Momentum acceleration
-        - RSI (Relative Strength Index)
+        Compute Directional Movement Index (DMI) and related features including:
+        - True Range (TR)
+        - Plus/Minus Directional Movement (+/-DM)
+        - Plus/Minus Directional Indicators (+/-DI)
+        - Average Directional Index (ADX)
+        - Directional Movement Ratio (DMR)
+        - Volatility-Adjusted DMI
         
         Parameters:
         -----------
         window_sizes : list
             List of window sizes for feature calculation
         """
-        print("Computing momentum features...")
+        print("Computing DMI features...")
         
-        # Calculate returns for different lookback periods
+        # Calculate high and low prices for each window
         for window in window_sizes:
             window_str = f'{window}'
             
-            # 1. Short-term momentum (price change over window)
-            self.df[f'momentum_{window_str}'] = (
-                (self.df[self.price_col] - self.df[self.price_col].shift(window)) / 
-                self.df[self.price_col].shift(window)
-            )
+            # Calculate True Range (TR)
+            self.df[f'high_{window_str}'] = self.df[self.price_col].rolling(window=window, min_periods=1).max()
+            self.df[f'low_{window_str}'] = self.df[self.price_col].rolling(window=window, min_periods=1).min()
+            self.df[f'prev_close_{window_str}'] = self.df[self.price_col].shift(1)
             
-            # 2. Momentum acceleration (change in momentum)
-            if window > 1:
-                self.df[f'momentum_prev_{window_str}'] = (
-                    (self.df[self.price_col].shift(1) - self.df[self.price_col].shift(window+1)) / 
-                    self.df[self.price_col].shift(window+1)
-                )
-                
-                self.df[f'momentum_acceleration_{window_str}'] = (
-                    self.df[f'momentum_{window_str}'] - self.df[f'momentum_prev_{window_str}']
-                )
-                
-                # Clean up temporary column
-                self.df = self.df.drop(columns=[f'momentum_prev_{window_str}'])
+            # True Range components
+            self.df[f'tr1_{window_str}'] = self.df[f'high_{window_str}'] - self.df[f'low_{window_str}']
+            self.df[f'tr2_{window_str}'] = abs(self.df[f'high_{window_str}'] - self.df[f'prev_close_{window_str}'])
+            self.df[f'tr3_{window_str}'] = abs(self.df[f'low_{window_str}'] - self.df[f'prev_close_{window_str}'])
             
-            # 3. RSI (Relative Strength Index)
-            # Calculate gains and losses
-            self.df[f'price_change_{window_str}'] = self.df[self.price_col].diff(1)
-            self.df[f'gain_{window_str}'] = np.where(
-                self.df[f'price_change_{window_str}'] > 0, 
-                self.df[f'price_change_{window_str}'], 
-                0
-            )
-            self.df[f'loss_{window_str}'] = np.where(
-                self.df[f'price_change_{window_str}'] < 0, 
-                abs(self.df[f'price_change_{window_str}']), 
+            # True Range is the maximum of the three components
+            self.df[f'tr_{window_str}'] = self.df[[f'tr1_{window_str}', f'tr2_{window_str}', f'tr3_{window_str}']].max(axis=1)
+            
+            # Calculate Plus/Minus Directional Movement
+            self.df[f'up_move_{window_str}'] = self.df[self.price_col] - self.df[self.price_col].shift(1)
+            self.df[f'down_move_{window_str}'] = self.df[self.price_col].shift(1) - self.df[self.price_col]
+            
+            # Plus Directional Movement (+DM)
+            self.df[f'plus_dm_{window_str}'] = np.where(
+                (self.df[f'up_move_{window_str}'] > self.df[f'down_move_{window_str}']) & 
+                (self.df[f'up_move_{window_str}'] > 0),
+                self.df[f'up_move_{window_str}'],
                 0
             )
             
-            # Calculate average gain and loss
-            self.df[f'avg_gain_{window_str}'] = self.df[f'gain_{window_str}'].rolling(window=window, min_periods=1).mean()
-            self.df[f'avg_loss_{window_str}'] = self.df[f'loss_{window_str}'].rolling(window=window, min_periods=1).mean()
-            
-            # Calculate RS and RSI
-            self.df[f'rs_{window_str}'] = (
-                self.df[f'avg_gain_{window_str}'] / self.df[f'avg_loss_{window_str}'].replace(0, 1e-10)
+            # Minus Directional Movement (-DM)
+            self.df[f'minus_dm_{window_str}'] = np.where(
+                (self.df[f'down_move_{window_str}'] > self.df[f'up_move_{window_str}']) & 
+                (self.df[f'down_move_{window_str}'] > 0),
+                self.df[f'down_move_{window_str}'],
+                0
             )
-            self.df[f'rsi_{window_str}'] = 100 - (100 / (1 + self.df[f'rs_{window_str}']))
+            
+            # Smoothed TR and DM
+            self.df[f'smoothed_tr_{window_str}'] = self.df[f'tr_{window_str}'].rolling(window=window, min_periods=1).mean()
+            self.df[f'smoothed_plus_dm_{window_str}'] = self.df[f'plus_dm_{window_str}'].rolling(window=window, min_periods=1).mean()
+            self.df[f'smoothed_minus_dm_{window_str}'] = self.df[f'minus_dm_{window_str}'].rolling(window=window, min_periods=1).mean()
+            
+            # Plus/Minus Directional Indicators (+/-DI)
+            self.df[f'plus_di_{window_str}'] = 100 * (self.df[f'smoothed_plus_dm_{window_str}'] / self.df[f'smoothed_tr_{window_str}'])
+            self.df[f'minus_di_{window_str}'] = 100 * (self.df[f'smoothed_minus_dm_{window_str}'] / self.df[f'smoothed_tr_{window_str}'])
+            
+            # Average Directional Index (ADX)
+            self.df[f'dx_{window_str}'] = 100 * abs(self.df[f'plus_di_{window_str}'] - self.df[f'minus_di_{window_str}']) / (self.df[f'plus_di_{window_str}'] + self.df[f'minus_di_{window_str}'])
+            self.df[f'adx_{window_str}'] = self.df[f'dx_{window_str}'].rolling(window=window, min_periods=1).mean()
+            
+            # Directional Movement Ratio (DMR)
+            self.df[f'dmr_{window_str}'] = self.df[f'plus_di_{window_str}'] / (self.df[f'minus_di_{window_str}'] + 1e-10)
+            
+            # Volatility-Adjusted DMI
+            # Use volatility to normalize the directional movement
+            vol = self.df[self.volatility_col].rolling(window=window, min_periods=1).mean()
+            self.df[f'vol_adjusted_plus_di_{window_str}'] = self.df[f'plus_di_{window_str}'] / (vol + 1e-10)
+            self.df[f'vol_adjusted_minus_di_{window_str}'] = self.df[f'minus_di_{window_str}'] / (vol + 1e-10)
             
             # Store computed features
             self.features.update({
-                f'momentum_{window_str}': self.df[f'momentum_{window_str}'].values,
-                f'rsi_{window_str}': self.df[f'rsi_{window_str}'].values
+                f'tr_{window_str}': self.df[f'tr_{window_str}'].values,
+                f'plus_di_{window_str}': self.df[f'plus_di_{window_str}'].values,
+                f'minus_di_{window_str}': self.df[f'minus_di_{window_str}'].values,
+                f'adx_{window_str}': self.df[f'adx_{window_str}'].values,
+                f'dmr_{window_str}': self.df[f'dmr_{window_str}'].values,
+                f'vol_adjusted_plus_di_{window_str}': self.df[f'vol_adjusted_plus_di_{window_str}'].values,
+                f'vol_adjusted_minus_di_{window_str}': self.df[f'vol_adjusted_minus_di_{window_str}'].values
             })
-            
-            if window > 1:
-                self.features[f'momentum_acceleration_{window_str}'] = self.df[f'momentum_acceleration_{window_str}'].values
             
         # Clean up temporary columns
         cols_to_drop = [col for col in self.df.columns if any(x in col for x in 
-                       ['price_change_', 'gain_', 'loss_', 'avg_gain_', 'avg_loss_', 'rs_'])]
+                       ['high_', 'low_', 'prev_close_', 'tr1_', 'tr2_', 'tr3_', 
+                        'up_move_', 'down_move_', 'plus_dm_', 'minus_dm_', 
+                        'smoothed_', 'dx_'])]
         self.df = self.df.drop(columns=cols_to_drop)
             
         return self
@@ -308,7 +326,7 @@ class MicrostructureFeatureEngine:
         self._compute_time_features()
         self.compute_microstructure_features(window_sizes)
         self.compute_order_flow_metrics(window_sizes)
-        self.compute_momentum_features(window_sizes)
+        self.compute_dmi_features(window_sizes)
         
         # Add basic features
         self.features.update({

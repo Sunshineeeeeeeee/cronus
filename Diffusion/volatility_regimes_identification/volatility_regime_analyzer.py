@@ -82,6 +82,27 @@ class VolatilityRegimeAnalyzer:
         
         return self
         
+    def _compute_entropy(self):
+        """
+        Compute entropy for each feature.
+        
+        Returns:
+        --------
+        numpy.ndarray
+            Array of entropy values for each feature
+        """
+        if self.features is None:
+            raise ValueError("Features must be computed first")
+            
+        # Initialize information theory enhancer if not already done
+        if not hasattr(self, 'info_enhancer') or self.info_enhancer is None:
+            self.info_enhancer = InformationTheoryEnhancer(self.features, self.feature_names)
+            
+        # Calculate entropy
+        self.info_enhancer.estimate_shannon_entropy()
+            
+        return self.info_enhancer.entropy
+        
     def enhance_features(self, n_features=10, include_entropy=True, include_kl=True):
         """
         Apply information-theoretic feature enhancement.

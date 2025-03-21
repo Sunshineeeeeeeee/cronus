@@ -283,18 +283,11 @@ class TopologicalDataAnalyzer:
                 
                 # Extract dimension-specific diagrams
                 dim_pairs = []
-                for pair in persistence:
-                    try:
-                        dimension, birth, death = pair  # Unpack the persistence pair
-                        if dimension == dim:
-                            if death != float('inf'):
-                                dim_pairs.append((birth, death))
-                            else:
-                                # Handle infinite death time
-                                dim_pairs.append((birth, max_epsilon))
-                    except (ValueError, IndexError) as e:
-                        print(f"Warning: Skipping malformed persistence pair {pair}: {str(e)}")
-                        continue
+                for (dimension, (birth, death)) in persistence:
+                    if dimension == dim:
+                        if death == float('inf'):
+                            death = max_epsilon
+                        dim_pairs.append((birth, death))
                 
                 if dim_pairs:
                     # Convert to numpy array for easier manipulation
@@ -320,6 +313,9 @@ class TopologicalDataAnalyzer:
                         betti_numbers.append(alive)
                         
                     persistence_diagrams[dim]['betti_numbers'] = np.array(betti_numbers)
+                    
+                    # Store infinite persistence features
+                    persistence_diagrams[dim]['persistent_features'] = dim_pairs[dim_pairs[:, 1] == max_epsilon]
             
             # Store results
             self.persistence_diagrams = persistence_diagrams
@@ -332,19 +328,43 @@ class TopologicalDataAnalyzer:
                 print("Generating visualizations...")
                 
                 # Plot persistence diagram
-                gd_plot.plot_persistence_diagram(
-                    persistence=persistence,
-                    legend=True,
-                    axes_labels=('Birth', 'Death')
-                )
+                plt.figure(figsize=(10, 10))
+                colors = ['blue', 'red', 'green']
+                for dim in range(3):
+                    if dim in persistence_diagrams and len(persistence_diagrams[dim]['full_diagram']) > 0:
+                        pairs = persistence_diagrams[dim]['full_diagram']
+                        plt.scatter(pairs[:, 0], pairs[:, 1], c=colors[dim], 
+                                  label=f'H{dim}', alpha=0.6)
+                
+                # Add diagonal line
+                diag_min = min_epsilon
+                diag_max = max_epsilon
+                plt.plot([diag_min, diag_max], [diag_min, diag_max], 'k--', alpha=0.5)
+                
+                plt.xlabel('Birth')
+                plt.ylabel('Death')
+                plt.title('Persistence Diagram')
+                plt.legend()
+                plt.grid(True, alpha=0.3)
                 plt.savefig('persistence_plots/persistence_diagram.png')
                 plt.close()
                 
                 # Plot persistence barcode
-                gd_plot.plot_persistence_barcode(
-                    persistence=persistence,
-                    legend=True
-                )
+                plt.figure(figsize=(12, 6))
+                y_offset = 0
+                for dim in range(3):
+                    if dim in persistence_diagrams and len(persistence_diagrams[dim]['full_diagram']) > 0:
+                        pairs = persistence_diagrams[dim]['full_diagram']
+                        for i, (birth, death) in enumerate(pairs):
+                            plt.plot([birth, death], [y_offset + i, y_offset + i], 
+                                   c=colors[dim], linewidth=1.5, label=f'H{dim}' if i == 0 else "")
+                        y_offset += len(pairs) + 1
+                
+                plt.xlabel('Epsilon')
+                plt.ylabel('Homology Class')
+                plt.title('Persistence Barcode')
+                plt.legend()
+                plt.grid(True, alpha=0.3)
                 plt.savefig('persistence_plots/persistence_barcode.png')
                 plt.close()
                 
@@ -381,15 +401,11 @@ class TopologicalDataAnalyzer:
                 }
                 
                 # Process persistence pairs
-                for pair in persistence:
-                    try:
-                        dimension, birth, death = pair
-                        if dimension < 2:  # Only process dimensions 0 and 1
-                            if death == float('inf'):
-                                death = max_epsilon
-                            persistence_diagrams[dimension]['full_diagram'].append((birth, death))
-                    except (ValueError, IndexError):
-                        continue
+                for (dimension, (birth, death)) in persistence:
+                    if dimension < 2:  # Only process dimensions 0 and 1
+                        if death == float('inf'):
+                            death = max_epsilon
+                        persistence_diagrams[dimension]['full_diagram'].append((birth, death))
                 
                 # Convert to numpy arrays
                 for dim in persistence_diagrams:

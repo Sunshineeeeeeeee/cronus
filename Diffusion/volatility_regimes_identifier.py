@@ -24,10 +24,11 @@ class VolatilityRegimesIdentifier:
         self.sampled_data = None
         self.pattern_classifier = None
         self.window_sizes = None  # Store window sizes
+        self.output_dir = None  # Store output directory
         
     def identify_regimes(self, df, timestamp_col, price_col, volume_col, volatility_col, 
                         n_regimes=4, window_sizes=None, top_features=10, alpha=0.5, beta=0.1,
-                        sample_size=10000, sampling_method='sequential'):
+                        sample_size=10000, sampling_method='sequential', output_dir=None):
         """
         Identify volatility regimes using a two-stage approach:
         1. Learn patterns from a representative sample
@@ -46,9 +47,20 @@ class VolatilityRegimesIdentifier:
             beta (float): Decay rate for temporal distance
             sample_size (int): Size of the sample to use for pattern learning
             sampling_method (str): Method to use for sampling ('sequential' or 'chunks')
+            output_dir (str): Directory for outputs (default: Diffusion/volatility_regimes_identification/results)
         """
         print("Beginning two-stage volatility regime detection...")
         
+        # Set up output directory
+        if output_dir is None:
+            # Create results directory in volatility_regimes_identification
+            self.output_dir = os.path.join('/Users/aleksandr/code/scripts/Diffusion/volatility_regimes_identification', 'results')
+        else:
+            self.output_dir = output_dir
+            
+        # Create output directory if it doesn't exist
+        os.makedirs(self.output_dir, exist_ok=True)
+
         # Store parameters
         self.sample_size = min(sample_size, len(df))
         self.window_sizes = window_sizes if window_sizes is not None else [10, 30, 50]
@@ -79,7 +91,8 @@ class VolatilityRegimesIdentifier:
             alpha=alpha,
             beta=beta,
             create_mapper=True,  # Ensure mapper graph is created
-            compute_homology=True  # Ensure persistent homology is computed
+            compute_homology=True,  # Ensure persistent homology is computed
+            output_dir=self.output_dir  # Pass output directory
         )
         
         # Verify model is trained
@@ -97,6 +110,16 @@ class VolatilityRegimesIdentifier:
         
         # Calculate and store regime statistics
         self._calculate_regime_statistics(df_with_regimes, volatility_col, timestamp_col)
+        
+        # Save results to CSV
+        results_file = os.path.join(self.output_dir, 'tick_data_with_regimes.csv')
+        df_with_regimes.to_csv(results_file, index=False)
+        print(f"Saved data with regime labels to {results_file}")
+        
+        # Save model
+        model_file = os.path.join(self.output_dir, 'regime_model.pkl')
+        self.save_model(model_file)
+        print(f"\nSaved model to {model_file}")
         
         return df_with_regimes
     

@@ -148,7 +148,7 @@ class VolatilityRegimeAnalyzer:
         
     def detect_regimes(self, n_regimes=4, alpha=0.5, beta=0.1, lambda_info=1.0,
                     min_epsilon=0.1, max_epsilon=2.0, num_steps=10,
-                    create_mapper=True, compute_homology=True):
+                    create_mapper=True, compute_homology=True, output_dir=None):
         """
         Detect volatility regimes using TDA and information theory.
         
@@ -162,6 +162,7 @@ class VolatilityRegimeAnalyzer:
             num_steps (int): Number of steps for persistence
             create_mapper (bool): Whether to create mapper graph
             compute_homology (bool): Whether to compute persistent homology
+            output_dir (str): Directory to save outputs
         """
         print("\n=== Detecting Volatility Regimes ===")
         
@@ -193,7 +194,8 @@ class VolatilityRegimeAnalyzer:
             self.tda.compute_persistent_homology(
                 min_epsilon=min_epsilon,
                 max_epsilon=max_epsilon,
-                num_steps=num_steps
+                num_steps=num_steps,
+                output_dir=output_dir
             )
         
         # Create mapper graph if requested

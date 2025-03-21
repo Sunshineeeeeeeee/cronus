@@ -215,7 +215,7 @@ class TopologicalDataAnalyzer:
                         
         return path_complex
     
-    def compute_persistent_homology(self, min_epsilon=0.1, max_epsilon=2.0, num_steps=10, use_weighted=False):
+    def compute_persistent_homology(self, min_epsilon=0.1, max_epsilon=2.0, num_steps=10, use_weighted=False, output_dir=None):
         """
         Compute persistent homology using GUDHI's Rips complex with optimized computation.
         
@@ -229,6 +229,8 @@ class TopologicalDataAnalyzer:
             Number of filtration steps
         use_weighted : bool
             Whether to use weighted Rips complex (considers temporal weights)
+        output_dir : str
+            Directory to save output files and plots
             
         Returns:
         --------
@@ -329,8 +331,8 @@ class TopologicalDataAnalyzer:
             
             # Generate visualizations
             try:
-                if not os.path.exists('persistence_plots'):
-                    os.makedirs('persistence_plots')
+                if output_dir is None:
+                    output_dir = '.'
                     
                 print("Generating visualizations...")
                 
@@ -353,7 +355,7 @@ class TopologicalDataAnalyzer:
                 plt.title('Persistence Diagram')
                 plt.legend()
                 plt.grid(True, alpha=0.3)
-                plt.savefig('persistence_plots/persistence_diagram.png')
+                plt.savefig(os.path.join(output_dir, 'persistence_diagram.png'))
                 plt.close()
                 
                 # Plot persistence barcode
@@ -372,7 +374,7 @@ class TopologicalDataAnalyzer:
                 plt.title('Persistence Barcode')
                 plt.legend()
                 plt.grid(True, alpha=0.3)
-                plt.savefig('persistence_plots/persistence_barcode.png')
+                plt.savefig(os.path.join(output_dir, 'persistence_barcode.png'))
                 plt.close()
                 
             except Exception as viz_error:

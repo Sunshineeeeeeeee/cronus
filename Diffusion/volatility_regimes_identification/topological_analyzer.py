@@ -128,6 +128,7 @@ class TopologicalDataAnalyzer:
     def construct_directed_network(self, epsilon=0.5, enforce_temporal=True):
         """
         Construct a directed weighted network based on the temporal distance matrix.
+        In other words, Construction of Proximity Graph
         
         Parameters:
         -----------
@@ -600,7 +601,6 @@ class TopologicalDataAnalyzer:
         # Add temporal filter
         filter_functions.append(values)
         
-        # Rest of the method remains unchanged...
         # Create intervals
         overlap = percent_overlap / 100.0
         interval_size = 1.0 / (n_intervals - (n_intervals - 1) * overlap)
@@ -675,7 +675,8 @@ class TopologicalDataAnalyzer:
     
     def identify_regimes(self, n_regimes=3, affinity_sigma=1.0):
         """
-        Identify volatility regimes using directed spectral clustering.
+        Identify volatility regimes using directed spectral clustering, 
+        incorporating path zigzag persistence information when available.
         
         Parameters:
         -----------
@@ -697,15 +698,70 @@ class TopologicalDataAnalyzer:
         # Create affinity matrix from distance matrix
         affinity = np.zeros_like(self.temporal_distance_matrix)
         
-        # Only consider i < j (temporal ordering)
-        for i in range(self.n_samples):
-            for j in range(i+1, self.n_samples):
-                # Calculate modified affinity with information weighting
-                if hasattr(self, 'mi_matrix'):
-                    mi_term = self.mi_matrix[i, j]
-                    affinity[i, j] = np.exp(-self.temporal_distance_matrix[i, j]**2 / (2 * affinity_sigma**2)) * (1 / (mi_term + 1e-10))
-                else:
-                    affinity[i, j] = np.exp(-self.temporal_distance_matrix[i, j]**2 / (2 * affinity_sigma**2))
+        # Check if we have path zigzag persistence data
+        has_zigzag_data = hasattr(self, 'path_zigzag_diagrams') and self.path_zigzag_diagrams is not None
+        
+        if has_zigzag_data:
+            print("Using path zigzag persistence information for regime identification...")
+            
+            # Get window indices from zigzag computation
+            window_indices = self.path_zigzag_diagrams['window_indices']
+            
+            # Get transition information
+            transitions = self.path_zigzag_diagrams['betti_numbers']['transitions']
+            
+            # Create a transition strength matrix based on zigzag persistence
+            transition_strength = np.zeros((self.n_samples, self.n_samples))
+            
+            # Fill transition strength matrix based on persistent paths
+            for transition in transitions:
+                window_pair = transition['window_pair']
+                persistent_paths = transition['persistent_paths']
+                dimension = transition['dimension']
+                
+                # More weight to higher-dimensional persistent paths
+                strength = persistent_paths * dimension 
+                
+                # Get indices for the overlapping part of consecutive windows
+                current_window = window_indices[window_pair[0]]
+                next_window = window_indices[window_pair[1]]
+                overlap_indices = set(current_window).intersection(set(next_window))
+                
+                # Set transition strength for points in the overlap
+                for i in overlap_indices:
+                    for j in overlap_indices:
+                        if i < j:  # Respect temporal ordering
+                            transition_strength[i, j] += strength
+            
+            # Normalize transition strength
+            if np.max(transition_strength) > 0:
+                transition_strength = transition_strength / np.max(transition_strength)
+            
+            # Incorporate transition strength into affinity calculation
+            for i in range(self.n_samples):
+                for j in range(i+1, self.n_samples):
+                    # Calculate modified affinity with zigzag information
+                    base_affinity = np.exp(-self.temporal_distance_matrix[i, j]**2 / (2 * affinity_sigma**2))
+                    
+                    # Boost affinity for strong persistent path transitions
+                    zigzag_boost = 1.0 + transition_strength[i, j]
+                    
+                    # Modify with information weighting if available
+                    if hasattr(self, 'mi_matrix'):
+                        mi_term = self.mi_matrix[i, j]
+                        affinity[i, j] = base_affinity * zigzag_boost * (1 / (mi_term + 1e-10))
+                    else:
+                        affinity[i, j] = base_affinity * zigzag_boost
+        else:
+            # Standard affinity computation (no zigzag information)
+            for i in range(self.n_samples):
+                for j in range(i+1, self.n_samples):
+                    # Calculate modified affinity with information weighting
+                    if hasattr(self, 'mi_matrix'):
+                        mi_term = self.mi_matrix[i, j]
+                        affinity[i, j] = np.exp(-self.temporal_distance_matrix[i, j]**2 / (2 * affinity_sigma**2)) * (1 / (mi_term + 1e-10))
+                    else:
+                        affinity[i, j] = np.exp(-self.temporal_distance_matrix[i, j]**2 / (2 * affinity_sigma**2))
                     
         # Make symmetric for spectral clustering
         affinity = affinity + affinity.T
@@ -1009,3 +1065,209 @@ class TopologicalDataAnalyzer:
             'nullity': nullity,
             'betti': betti
         } 
+
+    def compute_persistent_path_zigzag_homology(self, window_size=100, overlap=50, max_path_length=3, min_epsilon=0.1, max_epsilon=2.0, num_steps=10, output_dir=None):
+        """
+        Compute persistent path homology with zigzag persistence, specifically designed for sequential market microstructure data.
+        This combines the directed path complex approach with zigzag persistence to capture temporal evolution of market states.
+        
+        Parameters:
+        -----------
+        window_size : int
+            Size of sliding window for state computation
+        overlap : int
+            Number of points to overlap between windows
+        max_path_length : int
+            Maximum length of paths to consider
+        min_epsilon : float
+            Minimum distance threshold
+        max_epsilon : float
+            Maximum distance threshold
+        num_steps : int
+            Number of filtration steps
+        output_dir : str
+            Directory to save output files and plots
+            
+        Returns:
+        --------
+        dict
+            Dictionary containing path zigzag persistence diagrams
+        """
+        print("Computing persistent path zigzag homology for market microstructure...")
+        
+        try:
+            # Create sequence of directed networks for each window
+            networks = []
+            window_indices = []
+            
+            for i in range(0, self.n_samples - window_size + 1, window_size - overlap):
+                # Get window data indices
+                window_idx = list(range(i, min(i + window_size, self.n_samples)))
+                window_indices.append(window_idx)
+                
+                # Create temporal distance submatrix for this window
+                if self.temporal_distance_matrix is None:
+                    # Compute it if not already done
+                    self.compute_temporally_weighted_distance()
+                    self.temporal_distance_matrix = self.distance_matrix
+                
+                window_dist_matrix = self.temporal_distance_matrix[np.ix_(window_idx, window_idx)]
+                
+                # Create directed network for this window
+                epsilon = min_epsilon  # Start with minimum epsilon
+                G = nx.DiGraph()
+                
+                # Add nodes
+                for j, idx in enumerate(window_idx):
+                    G.add_node(j, original_idx=idx, features=self.features[idx], timestamp=self.timestamps[idx])
+                
+                # Add edges (respecting temporal ordering)
+                for j in range(len(window_idx)):
+                    for k in range(j+1, len(window_idx)):  # Enforce j < k for temporal ordering
+                        if window_dist_matrix[j, k] <= epsilon:
+                            G.add_edge(j, k, weight=1.0/max(window_dist_matrix[j, k], 1e-10))
+                
+                networks.append(G)
+            
+            # For each network window, compute path complex
+            path_complexes = []
+            for G in networks:
+                path_complex = self.compute_path_complex(G, max_path_length)
+                path_complexes.append(path_complex)
+            
+            # Initialize zigzag path persistence
+            path_zigzag_diagrams = {
+                'window_diagrams': [],
+                'transitions': [],
+                'betti_numbers': []
+            }
+            
+            # Process each dimension
+            for dim in range(max_path_length + 1):
+                betti_series = []
+                
+                # Compute homology for each window
+                for i, path_complex in enumerate(path_complexes):
+                    if dim not in path_complex or not path_complex[dim]:
+                        betti_series.append(0)
+                        continue
+                        
+                    paths = path_complex[dim]
+                    
+                    # Create boundary matrix
+                    n_paths = len(paths)
+                    boundary_matrix = np.zeros((n_paths, n_paths))
+                    
+                    # Fill boundary matrix
+                    for j, path in enumerate(paths):
+                        # Get boundary paths
+                        boundary_paths = []
+                        for k in range(len(path) - 1):
+                            boundary_path = path[:k] + path[k+1:]
+                            if dim-1 in path_complex and boundary_path in path_complex[dim-1]:
+                                boundary_paths.append(path_complex[dim-1].index(boundary_path))
+                        
+                        # Add to boundary matrix (if appropriate dimension exists)
+                        if dim-1 in path_complex:
+                            for k in boundary_paths:
+                                if k < boundary_matrix.shape[1]:
+                                    boundary_matrix[j, k] = 1
+                    
+                    # Compute homology
+                    homology = self._compute_homology_from_boundary(boundary_matrix)
+                    betti_series.append(homology['betti'])
+                
+                path_zigzag_diagrams[f'betti_{dim}'] = betti_series
+            
+            # Compute zigzag persistence across windows
+            transition_features = []
+            
+            # For each pair of consecutive windows, analyze transitions
+            for i in range(len(window_indices) - 1):
+                current_window = window_indices[i]
+                next_window = window_indices[i+1]
+                
+                # Find overlap indices
+                overlap_indices = set(current_window).intersection(set(next_window))
+                
+                # Track transitions of paths
+                for dim in range(1, max_path_length + 1):  # Skip 0-dim (just points)
+                    if dim in path_complexes[i] and dim in path_complexes[i+1]:
+                        # Find paths in current window that have elements in the overlap
+                        persistent_paths = []
+                        for path in path_complexes[i][dim]:
+                            # Check if path nodes are in overlap (need original indices)
+                            path_nodes = [networks[i].nodes[node]['original_idx'] for node in path]
+                            if any(idx in overlap_indices for idx in path_nodes):
+                                persistent_paths.append(path)
+                        
+                        transition_features.append({
+                            'window_pair': (i, i+1),
+                            'dimension': dim,
+                            'persistent_paths': len(persistent_paths)
+                        })
+            
+            path_zigzag_diagrams['transitions'] = transition_features
+            
+            # Generate epsilon stepping for filtration
+            epsilon_values = np.linspace(min_epsilon, max_epsilon, num_steps)
+            
+            # Store results
+            self.path_zigzag_diagrams = {
+                'window_complexes': path_complexes,
+                'window_networks': networks,
+                'window_indices': window_indices,
+                'betti_numbers': path_zigzag_diagrams,
+                'epsilon_values': epsilon_values,
+                'window_size': window_size,
+                'overlap': overlap
+            }
+            
+            # Generate visualizations
+            if output_dir is not None:
+                os.makedirs(output_dir, exist_ok=True)
+                
+                # Plot Betti numbers across windows
+                plt.figure(figsize=(12, 6))
+                
+                for dim in range(max_path_length + 1):
+                    betti_key = f'betti_{dim}'
+                    if betti_key in path_zigzag_diagrams:
+                        betti_values = path_zigzag_diagrams[betti_key]
+                        plt.plot(range(len(betti_values)), betti_values, 
+                               label=f'H{dim}', linewidth=2, marker='o')
+                
+                plt.xlabel('Window Index')
+                plt.ylabel('Betti Number')
+                plt.title('Path Zigzag Persistence: Betti Numbers Across Windows')
+                plt.legend()
+                plt.grid(True, alpha=0.3)
+                plt.savefig(os.path.join(output_dir, 'path_zigzag_betti.png'))
+                plt.close()
+                
+                # Plot transition diagram
+                if transition_features:
+                    plt.figure(figsize=(12, 6))
+                    
+                    # Group by dimension
+                    for dim in range(1, max_path_length + 1):
+                        dim_transitions = [t['persistent_paths'] for t in transition_features if t['dimension'] == dim]
+                        if dim_transitions:
+                            plt.plot(range(len(dim_transitions)), dim_transitions, 
+                                   label=f'Dim {dim}', linewidth=2, marker='x')
+                    
+                    plt.xlabel('Window Transition')
+                    plt.ylabel('Persistent Paths')
+                    plt.title('Path Structure Persistence Across Window Transitions')
+                    plt.legend()
+                    plt.grid(True, alpha=0.3)
+                    plt.savefig(os.path.join(output_dir, 'path_zigzag_transitions.png'))
+                    plt.close()
+            
+            return self.path_zigzag_diagrams
+            
+        except Exception as e:
+            print(f"Error in path zigzag persistence computation: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None 

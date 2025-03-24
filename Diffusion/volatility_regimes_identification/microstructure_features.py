@@ -39,7 +39,7 @@ class MicrostructureFeatureEngine:
         self.price_col = price_col
         self.volume_col = volume_col
         self.volatility_col = volatility_col
-        self.window_sizes = None  # Will store window sizes after feature extraction
+        self.window_sizes = None  
         
         # Ensure timestamp is in datetime format
         if self.df[timestamp_col].dtype != 'datetime64[ns]':

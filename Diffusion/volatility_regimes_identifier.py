@@ -11,7 +11,7 @@ from volatility_regimes_identification import (
 
 class VolatilityRegimesIdentifier:
     """
-    A simplified interface for identifying volatility regimes in tick data
+    Interface for identifying volatility regimes in tick data
     using the TDA volatility regimes package.
     """
     
@@ -28,9 +28,10 @@ class VolatilityRegimesIdentifier:
         
     def identify_regimes(self, df, timestamp_col, price_col, volume_col, volatility_col, 
                         n_regimes=4, window_sizes=None, top_features=10, alpha=0.5, beta=0.1,
+                        window_size=100, overlap=50, max_path_length=3, min_epsilon=0.1, max_epsilon=2.0,
                         sample_size=10000, sampling_method='sequential', output_dir=None):
         """
-        Identify volatility regimes using a two-stage approach:
+        Identify volatility regimes using a two-stage approach with path complex and zigzag persistence:
         1. Learn patterns from a representative sample
         2. Apply patterns to the full dataset
         
@@ -45,6 +46,11 @@ class VolatilityRegimesIdentifier:
             top_features (int): Number of top features to use
             alpha (float): Weight for temporal component
             beta (float): Decay rate for temporal distance
+            window_size (int): Size of sliding window for zigzag persistence
+            overlap (int): Number of points to overlap between windows
+            max_path_length (int): Maximum length of paths to consider
+            min_epsilon (float): Minimum distance threshold
+            max_epsilon (float): Maximum distance threshold
             sample_size (int): Size of the sample to use for pattern learning
             sampling_method (str): Method to use for sampling ('sequential' or 'chunks')
             output_dir (str): Directory for outputs (default: Diffusion/volatility_regimes_identification/results)
@@ -84,15 +90,20 @@ class VolatilityRegimesIdentifier:
         print("\n--- STEP 2: Enhancing Features ---")
         self.analyzer.enhance_features(n_features=top_features)
         
-        # Detect regimes on sample
+        # Detect regimes on sample using path zigzag persistence
         print("\n--- STEP 3: Detecting Regimes ---")
         self.regimes = self.analyzer.detect_regimes(
             n_regimes=n_regimes,
             alpha=alpha,
             beta=beta,
-            create_mapper=True,  # Ensure mapper graph is created
-            compute_homology=True,  # Ensure persistent homology is computed
-            output_dir=self.output_dir  # Pass output directory
+            window_size=window_size,
+            overlap=overlap,
+            max_path_length=max_path_length,
+            min_epsilon=min_epsilon,
+            max_epsilon=max_epsilon,
+            create_mapper=True,
+            compute_homology=True,
+            output_dir=self.output_dir
         )
         
         # Verify model is trained
@@ -186,7 +197,16 @@ class VolatilityRegimesIdentifier:
         
         # Copy trained model components to the new analyzer
         full_analyzer.regime_labels = self.regimes
-        full_analyzer.tda = self.analyzer.tda
+        
+        # Ensure we copy the path zigzag persistence data as well
+        if hasattr(self.analyzer, 'tda') and hasattr(self.analyzer.tda, 'path_zigzag_diagrams'):
+            full_analyzer.tda = self.analyzer.tda
+            print("Using path zigzag persistence information from trained model")
+        else:
+            # Fall back to simpler approach if no zigzag data available
+            full_analyzer.tda = self.analyzer.tda
+            print("Using standard persistence information from trained model")
+            
         full_analyzer.regime_analysis = self.analyzer.regime_analysis
         
         # Use the learned patterns to label the full dataset
@@ -414,6 +434,131 @@ class VolatilityRegimesIdentifier:
         
         print(f"Price by regimes plot saved to {output_dir}/price_by_regimes.png")
 
+    def visualize_path_zigzag_persistence(self, output_dir=None):
+        """
+        Visualize the path zigzag persistence analysis results.
+        
+        Parameters:
+        -----------
+        output_dir : str
+            Directory to save visualizations (defaults to self.output_dir)
+        
+        Returns:
+        --------
+        bool
+            True if visualization was successful, False otherwise
+        """
+        if self.analyzer is None or not hasattr(self.analyzer, 'tda'):
+            print("No analyzer with TDA pipeline found. Run identify_regimes first.")
+            return False
+            
+        # Check if path zigzag persistence was computed
+        if not hasattr(self.analyzer.tda, 'path_zigzag_diagrams') or self.analyzer.tda.path_zigzag_diagrams is None:
+            print("No path zigzag persistence data found. Run identify_regimes with compute_homology=True.")
+            return False
+            
+        # Use the specified output directory or default to self.output_dir
+        if output_dir is None:
+            output_dir = self.output_dir if self.output_dir is not None else './path_zigzag_results'
+            
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+        
+        try:
+            # Extract path zigzag data
+            zigzag_data = self.analyzer.tda.path_zigzag_diagrams
+            
+            # Plot Betti numbers across windows
+            plt.figure(figsize=(12, 6))
+            betti_numbers = zigzag_data['betti_numbers']
+            
+            max_path_length = 0
+            for key in betti_numbers:
+                if key.startswith('betti_'):
+                    dim = int(key.split('_')[1])
+                    max_path_length = max(max_path_length, dim)
+                    
+            for dim in range(max_path_length + 1):
+                betti_key = f'betti_{dim}'
+                if betti_key in betti_numbers:
+                    betti_values = betti_numbers[betti_key]
+                    plt.plot(range(len(betti_values)), betti_values, 
+                           label=f'H{dim}', linewidth=2, marker='o')
+            
+            plt.xlabel('Window Index')
+            plt.ylabel('Betti Number')
+            plt.title('Path Zigzag Persistence: Betti Numbers Across Windows')
+            plt.legend()
+            plt.grid(True, alpha=0.3)
+            plt.savefig(os.path.join(output_dir, 'path_zigzag_betti.png'))
+            plt.close()
+            
+            # Plot transition diagram
+            if 'transitions' in betti_numbers and betti_numbers['transitions']:
+                plt.figure(figsize=(12, 6))
+                
+                # Group by dimension
+                transition_features = betti_numbers['transitions']
+                max_dim = max([t['dimension'] for t in transition_features])
+                
+                for dim in range(1, max_dim + 1):
+                    dim_transitions = [t['persistent_paths'] for t in transition_features if t['dimension'] == dim]
+                    if dim_transitions:
+                        plt.plot(range(len(dim_transitions)), dim_transitions, 
+                               label=f'Dim {dim}', linewidth=2, marker='x')
+                
+                plt.xlabel('Window Transition')
+                plt.ylabel('Persistent Paths')
+                plt.title('Path Structure Persistence Across Window Transitions')
+                plt.legend()
+                plt.grid(True, alpha=0.3)
+                plt.savefig(os.path.join(output_dir, 'path_zigzag_transitions.png'))
+                plt.close()
+                
+            # Plot correlation between zigzag persistence and regime changes
+            if self.regime_labels is not None:
+                plt.figure(figsize=(12, 6))
+                
+                # Extract regime transition points
+                regime_changes = []
+                for i in range(1, len(self.regime_labels)):
+                    if self.regime_labels[i] != self.regime_labels[i-1]:
+                        regime_changes.append(i)
+                
+                # Plot Betti numbers with regime change markers
+                if 'betti_1' in betti_numbers:  # Use H1 as it's often most informative
+                    betti_values = betti_numbers['betti_1']
+                    plt.plot(range(len(betti_values)), betti_values, 
+                           label='H1 Betti Numbers', linewidth=2)
+                    
+                    # Map regime change points to window indices
+                    window_size = zigzag_data['window_size']
+                    overlap = zigzag_data['overlap']
+                    step = window_size - overlap
+                    
+                    for change_point in regime_changes:
+                        # Map sample index to window index
+                        window_idx = change_point // step
+                        if window_idx < len(betti_values):
+                            plt.axvline(x=window_idx, color='r', linestyle='--', alpha=0.5)
+                
+                plt.xlabel('Window Index')
+                plt.ylabel('Betti Number')
+                plt.title('Path Zigzag Persistence vs Regime Changes')
+                plt.legend(['H1 Betti Numbers', 'Regime Change'])
+                plt.grid(True, alpha=0.3)
+                plt.savefig(os.path.join(output_dir, 'zigzag_vs_regimes.png'))
+                plt.close()
+            
+            print(f"Path zigzag persistence visualizations saved to {output_dir}")
+            return True
+            
+        except Exception as e:
+            print(f"Error in path zigzag persistence visualization: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+
 
 # Example usage
 if __name__ == "__main__":
@@ -423,8 +568,23 @@ if __name__ == "__main__":
     # Create identifier
     # identifier = VolatilityRegimesIdentifier()
     
-    # Identify regimes
-    # df_with_regimes = identifier.identify_regimes(df)
+    # Identify regimes with path zigzag persistence
+    # df_with_regimes = identifier.identify_regimes(
+    #     df,
+    #     timestamp_col='Timestamp',
+    #     price_col='Value',
+    #     volume_col='Volume',
+    #     volatility_col='Volatility',
+    #     n_regimes=3,
+    #     window_size=100,  # Size of sliding window for zigzag persistence
+    #     overlap=50,       # Number of points to overlap between windows
+    #     max_path_length=3,  # Maximum length of paths to consider
+    #     min_epsilon=0.1,  # Minimum distance threshold
+    #     max_epsilon=2.0,  # Maximum distance threshold
+    # )
+    
+    # Visualize path zigzag persistence results
+    # identifier.visualize_path_zigzag_persistence()
     
     # Visualize regimes
     # identifier.visualize_regimes()

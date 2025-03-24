@@ -147,10 +147,11 @@ class VolatilityRegimeAnalyzer:
         return self
         
     def detect_regimes(self, n_regimes=4, alpha=0.5, beta=0.1, lambda_info=1.0,
-                    min_epsilon=0.1, max_epsilon=2.0, num_steps=10,
-                    create_mapper=True, compute_homology=True, output_dir=None):
+                    min_epsilon=0.1, max_epsilon=2.0, num_steps=10, window_size=100, overlap=50,
+                    max_path_length=3, create_mapper=True, compute_homology=True, output_dir=None):
         """
-        Detect volatility regimes using TDA and information theory.
+        Detect volatility regimes using TDA and information theory, with path complex and zigzag persistence.
+        This is specially adapted for sequential market microstructure data.
         
         Parameters:
             n_regimes (int): Number of regimes to detect
@@ -160,6 +161,9 @@ class VolatilityRegimeAnalyzer:
             min_epsilon (float): Minimum distance threshold
             max_epsilon (float): Maximum distance threshold
             num_steps (int): Number of steps for persistence
+            window_size (int): Size of sliding window for zigzag persistence
+            overlap (int): Number of points to overlap between windows
+            max_path_length (int): Maximum length of paths to consider
             create_mapper (bool): Whether to create mapper graph
             compute_homology (bool): Whether to compute persistent homology
             output_dir (str): Directory to save outputs
@@ -188,10 +192,13 @@ class VolatilityRegimeAnalyzer:
         # Store the temporal distance matrix
         self.tda.temporal_distance_matrix = self.tda.distance_matrix
         
-        # Compute persistent homology if requested
+        # Compute persistent homology using path complex and zigzag persistence if requested
         if compute_homology:
-            print("\n--- STEP 3: Computing Persistent Homology ---")
-            self.tda.compute_persistent_homology(
+            print("\n--- STEP 3: Computing Path Zigzag Persistent Homology ---")
+            self.tda.compute_persistent_path_zigzag_homology(
+                window_size=window_size,
+                overlap=overlap,
+                max_path_length=max_path_length,
                 min_epsilon=min_epsilon,
                 max_epsilon=max_epsilon,
                 num_steps=num_steps,
@@ -286,7 +293,7 @@ class VolatilityRegimeAnalyzer:
         )
         
         new_features, _, new_df_processed = new_feature_engine.extract_all_features(
-            window_sizes=[10, 50, 100]  # Use the same window sizes as during training
+            window_sizes=[10, 50, 100] 
         )
         
         # 2. Get feature selection if available

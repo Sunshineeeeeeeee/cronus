@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import warnings
+import time
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -104,6 +105,7 @@ class MicrostructureFeatureEngine:
         window_sizes : list
             List of window sizes for feature calculation
         """
+        start_time = time.time()
         print("Computing microstructure features...")
         
         # Calculate daily mean volume for volume profile normalization
@@ -152,6 +154,7 @@ class MicrostructureFeatureEngine:
         # Clean up temporary columns
         self.df = self.df.drop(columns=[col for col in self.df.columns if col.startswith('time_sum_')])
             
+        print(f"Microstructure features computed in {time.time() - start_time:.2f} seconds")
         return self
             
     def compute_order_flow_metrics(self, window_sizes=[10, 50, 100]):
@@ -165,6 +168,7 @@ class MicrostructureFeatureEngine:
         window_sizes : list
             List of window sizes for feature calculation
         """
+        start_time = time.time()
         print("Computing order flow metrics...")
         
         # Approximate buy/sell volume using tick rule
@@ -211,6 +215,7 @@ class MicrostructureFeatureEngine:
                        ['buy_volume_sum_', 'sell_volume_sum_', 'abs_price_change_', 'sqrt_volume_'])]
         self.df = self.df.drop(columns=cols_to_drop)
             
+        print(f"Order flow metrics computed in {time.time() - start_time:.2f} seconds")
         return self
         
     def compute_dmi_features(self, window_sizes=[10, 50, 100]):
@@ -228,6 +233,7 @@ class MicrostructureFeatureEngine:
         window_sizes : list
             List of window sizes for feature calculation
         """
+        start_time = time.time()
         print("Computing DMI features...")
         
         # Calculate high and low prices for each window
@@ -307,6 +313,7 @@ class MicrostructureFeatureEngine:
                         'smoothed_', 'dx_'])]
         self.df = self.df.drop(columns=cols_to_drop)
             
+        print(f"DMI features computed in {time.time() - start_time:.2f} seconds")
         return self
         
     def extract_all_features(self, window_sizes=[10, 50, 100]):
@@ -323,14 +330,27 @@ class MicrostructureFeatureEngine:
         tuple
             (feature_array, feature_names, dataframe)
         """
+        total_start = time.time()
+        
         # Store window sizes
         self.window_sizes = window_sizes
         
         # Compute all features
+        time_start = time.time()
         self._compute_time_features()
+        print(f"Time features computed in {time.time() - time_start:.2f} seconds")
+        
+        micro_start = time.time()
         self.compute_microstructure_features(window_sizes)
+        print(f"Microstructure features computed in {time.time() - micro_start:.2f} seconds")
+        
+        flow_start = time.time()
         self.compute_order_flow_metrics(window_sizes)
+        print(f"Order flow metrics computed in {time.time() - flow_start:.2f} seconds")
+        
+        dmi_start = time.time()
         self.compute_dmi_features(window_sizes)
+        print(f"DMI features computed in {time.time() - dmi_start:.2f} seconds")
         
         # Add basic features
         self.features.update({
@@ -344,6 +364,6 @@ class MicrostructureFeatureEngine:
         feature_names = list(self.features.keys())
         feature_array = np.column_stack([self.features[name] for name in feature_names])
         
-        print(f"Extracted {len(feature_names)} features")
+        print(f"Extracted {len(feature_names)} features in total {time.time() - total_start:.2f} seconds")
         
         return feature_array, feature_names, self.df 

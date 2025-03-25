@@ -1,13 +1,17 @@
 import numpy as np
-import networkx as nx
-import matplotlib.pyplot as plt
-from scipy.spatial.distance import pdist, squareform
-from sklearn.cluster import SpectralClustering
-from sklearn.decomposition import PCA
+import pandas as pd
 import os
-import itertools
+import time
+from datetime import datetime
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import SpectralClustering
 import warnings
+import networkx as nx
 import gudhi
+from scipy.spatial.distance import pdist, squareform
+from sklearn.decomposition import PCA
+import itertools
 import gudhi.point_cloud
 import gudhi.representations
 import gudhi.persistence_graphical_tools as gd_plot
@@ -15,7 +19,6 @@ from gudhi.rips_complex import RipsComplex
 from gudhi.weighted_rips_complex import WeightedRipsComplex
 from gudhi.persistence_graphical_tools import plot_persistence_barcode
 from gudhi.persistence_graphical_tools import plot_persistence_diagram
-import pandas as pd
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -79,6 +82,7 @@ class TopologicalDataAnalyzer:
             lambda_info (float): Weight for mutual information component
             mi_matrix (np.ndarray): Pre-computed mutual information matrix
         """
+        start_time = time.time()
         print("Computing temporally-weighted distance matrix...")
         
         # Convert timestamps to numerical values (seconds since first timestamp)
@@ -123,6 +127,7 @@ class TopologicalDataAnalyzer:
                 dist_matrix[j, i] = dist_matrix[i, j]  # Symmetric matrix
         
         self.distance_matrix = dist_matrix
+        print(f"Distance matrix computation completed in {time.time() - start_time:.2f} seconds")
         return dist_matrix
     
     def construct_directed_network(self, epsilon=0.5, enforce_temporal=True):
@@ -238,6 +243,7 @@ class TopologicalDataAnalyzer:
         dict
             Dictionary containing persistence diagrams and related information
         """
+        start_time = time.time()
         print("Computing persistent homology using GUDHI...")
         
         try:
@@ -381,6 +387,7 @@ class TopologicalDataAnalyzer:
             except Exception as viz_error:
                 print(f"Warning: Could not generate visualizations: {str(viz_error)}")
             
+            print(f"Persistent homology computation completed in {time.time() - start_time:.2f} seconds")
             return persistence_diagrams
             
         except Exception as e:
@@ -690,16 +697,33 @@ class TopologicalDataAnalyzer:
         numpy.ndarray
             Array of regime labels for each data point
         """
+        start_time = time.time()
         print("Identifying volatility regimes...")
         
         if self.temporal_distance_matrix is None:
             raise ValueError("Temporal distance matrix must be computed first")
-            
+        
+        # Normalize features to improve clustering
+        normalized_features = StandardScaler().fit_transform(self.features)
+        
         # Create affinity matrix from distance matrix
         affinity = np.zeros_like(self.temporal_distance_matrix)
         
         # Check if we have path zigzag persistence data
         has_zigzag_data = hasattr(self, 'path_zigzag_diagrams') and self.path_zigzag_diagrams is not None
+        
+        # Initialize temporal coherence matrix - encourages temporal consistency in regimes
+        temporal_coherence = np.zeros_like(self.temporal_distance_matrix)
+        half_window = 5  # Consider points within this window as temporally related
+        
+        # Build temporal coherence - higher affinity for nearby points in time
+        for i in range(self.n_samples):
+            lower_bound = max(0, i - half_window)
+            upper_bound = min(self.n_samples, i + half_window + 1)
+            for j in range(lower_bound, upper_bound):
+                if i != j:
+                    # Stronger coherence for closer points in time
+                    temporal_coherence[i, j] = 1.0 - abs(i - j) / (2 * half_window)
         
         if has_zigzag_data:
             print("Using path zigzag persistence information for regime identification...")
@@ -720,7 +744,7 @@ class TopologicalDataAnalyzer:
                 dimension = transition['dimension']
                 
                 # More weight to higher-dimensional persistent paths
-                strength = persistent_paths * dimension 
+                strength = persistent_paths * (dimension + 1)  # Increase influence
                 
                 # Get indices for the overlapping part of consecutive windows
                 current_window = window_indices[window_pair[0]]
@@ -739,43 +763,122 @@ class TopologicalDataAnalyzer:
             
             # Incorporate transition strength into affinity calculation
             for i in range(self.n_samples):
-                for j in range(i+1, self.n_samples):
-                    # Calculate modified affinity with zigzag information
-                    base_affinity = np.exp(-self.temporal_distance_matrix[i, j]**2 / (2 * affinity_sigma**2))
-                    
-                    # Boost affinity for strong persistent path transitions
-                    zigzag_boost = 1.0 + transition_strength[i, j]
-                    
-                    # Modify with information weighting if available
-                    if hasattr(self, 'mi_matrix'):
-                        mi_term = self.mi_matrix[i, j]
-                        affinity[i, j] = base_affinity * zigzag_boost * (1 / (mi_term + 1e-10))
-                    else:
-                        affinity[i, j] = base_affinity * zigzag_boost
+                for j in range(self.n_samples):
+                    if i != j:
+                        # Calculate feature distance using normalized features
+                        feature_dist = np.sqrt(np.sum((normalized_features[i] - normalized_features[j]) ** 2))
+                        
+                        # Calculate modified affinity with zigzag information
+                        base_affinity = np.exp(-feature_dist**2 / (2 * affinity_sigma**2))
+                        temporal_effect = 1.0 + temporal_coherence[i, j]
+                        
+                        # Boost affinity for strong persistent path transitions
+                        zigzag_boost = 1.0 + transition_strength[i, j] * 2.0
+                        
+                        # Calculate final affinity
+                        affinity[i, j] = base_affinity * zigzag_boost * temporal_effect
+                        
+                        # Penalize large temporal gaps (non-consecutive regimes)
+                        if abs(i - j) > half_window * 3:
+                            affinity[i, j] *= 0.5
+                            
         else:
             # Standard affinity computation (no zigzag information)
             for i in range(self.n_samples):
-                for j in range(i+1, self.n_samples):
-                    # Calculate modified affinity with information weighting
-                    if hasattr(self, 'mi_matrix'):
-                        mi_term = self.mi_matrix[i, j]
-                        affinity[i, j] = np.exp(-self.temporal_distance_matrix[i, j]**2 / (2 * affinity_sigma**2)) * (1 / (mi_term + 1e-10))
-                    else:
-                        affinity[i, j] = np.exp(-self.temporal_distance_matrix[i, j]**2 / (2 * affinity_sigma**2))
-                    
-        # Make symmetric for spectral clustering
-        affinity = affinity + affinity.T
+                for j in range(self.n_samples):
+                    if i != j:
+                        # Calculate feature distance using normalized features
+                        feature_dist = np.sqrt(np.sum((normalized_features[i] - normalized_features[j]) ** 2))
+                        
+                        # Calculate modified affinity with temporal weighting
+                        base_affinity = np.exp(-feature_dist**2 / (2 * affinity_sigma**2))
+                        temporal_effect = 1.0 + temporal_coherence[i, j]
+                        
+                        # Calculate final affinity
+                        affinity[i, j] = base_affinity * temporal_effect
+                        
+                        # Penalize large temporal gaps (non-consecutive regimes)
+                        if abs(i - j) > half_window * 3:
+                            affinity[i, j] *= 0.5
         
-        # Perform spectral clustering
-        clustering = SpectralClustering(
-            n_clusters=n_regimes,
-            affinity='precomputed',
-            random_state=42
-        )
+        # Make sure affinity matrix is valid for spectral clustering
+        np.fill_diagonal(affinity, 0)  # Zero diagonal
         
-        regime_labels = clustering.fit_predict(affinity)
+        # Print some stats about the affinity matrix
+        print(f"Affinity matrix shape: {affinity.shape}, min: {np.min(affinity)}, max: {np.max(affinity)}")
         
+        # Perform spectral clustering with additional parameters for robustness
+        from sklearn.cluster import SpectralClustering
+        
+        # Try with different algorithms for stability
+        try:
+            # First attempt with 'amg' solver which is faster and more accurate
+            clustering = SpectralClustering(
+                n_clusters=n_regimes,
+                affinity='precomputed',
+                random_state=42,
+                assign_labels='kmeans',
+                eigen_solver='amg'  # Algebraic multigrid solver
+            )
+            regime_labels = clustering.fit_predict(affinity)
+        except:
+            # Fall back to default solver if amg fails
+            print("AMG solver failed, using default solver...")
+            clustering = SpectralClustering(
+                n_clusters=n_regimes,
+                affinity='precomputed',
+                random_state=42,
+                assign_labels='kmeans'
+            )
+            regime_labels = clustering.fit_predict(affinity)
+        
+        # Check if regime distribution is reasonable
+        regime_counts = np.bincount(regime_labels)
+        min_regime_size = np.min(regime_counts)
+        total_points = len(regime_labels)
+        
+        print(f"Initial regime distribution: {regime_counts}")
+        
+        # If any regime is too small, try to re-cluster
+        if min_regime_size < total_points * 0.05 and total_points > 20:
+            print(f"Regime imbalance detected, smallest regime has only {min_regime_size} points. Trying again with adjusted parameters...")
+            
+            # Adjust affinity to promote more balanced clusters
+            for i in range(self.n_samples):
+                for j in range(self.n_samples):
+                    if i != j:
+                        # Add more weight to temporal coherence
+                        affinity[i, j] = affinity[i, j] * (1.0 + temporal_coherence[i, j] * 2.0)
+            
+            # Try again with slightly different parameters
+            clustering = SpectralClustering(
+                n_clusters=n_regimes,
+                affinity='precomputed',
+                random_state=42,
+                n_init=10,  # Try multiple initializations
+                assign_labels='discretize'  # Different label assignment
+            )
+            new_regime_labels = clustering.fit_predict(affinity)
+            
+            # Check if the new labels are better balanced
+            new_regime_counts = np.bincount(new_regime_labels)
+            new_min_regime_size = np.min(new_regime_counts)
+            
+            print(f"New regime distribution: {new_regime_counts}")
+            
+            # Use the new labels if they're better balanced
+            if new_min_regime_size > min_regime_size:
+                regime_labels = new_regime_labels
+        
+        # Store regime labels
         self.regime_labels = regime_labels
+        
+        # Print regime distribution
+        final_regime_counts = np.bincount(regime_labels)
+        print(f"Final regime distribution: {final_regime_counts}")
+        
+        # Print runtime
+        print(f"Regime identification completed in {time.time() - start_time:.2f} seconds")
         return regime_labels
     
     def analyze_regimes(self):
@@ -787,22 +890,32 @@ class TopologicalDataAnalyzer:
         dict
             Dictionary containing regime analysis results
         """
+        start_time = time.time()
         print("Analyzing volatility regimes...")
         
         if self.regime_labels is None:
             raise ValueError("Must detect regimes before analyzing them")
         
-        n_regimes = len(np.unique(self.regime_labels))
+        # Get the unique regime labels, which may not be sequential from 0
+        unique_regimes = np.unique(self.regime_labels)
+        n_regimes = len(unique_regimes)
+        
+        # Create a mapping from regime labels to sequential indices
+        regime_to_idx = {regime: idx for idx, regime in enumerate(unique_regimes)}
+        idx_to_regime = {idx: regime for idx, regime in enumerate(unique_regimes)}
+        
         regime_stats = []
         
-        # Initialize transition probability matrix
+        # Initialize transition probability matrix with the correct size
         transition_probs = np.zeros((n_regimes, n_regimes))
         
-        # Compute transitions
+        # Compute transitions using the mapping
         for i in range(len(self.regime_labels) - 1):
             current_regime = self.regime_labels[i]
             next_regime = self.regime_labels[i + 1]
-            transition_probs[current_regime, next_regime] += 1
+            current_idx = regime_to_idx[current_regime]
+            next_idx = regime_to_idx[next_regime]
+            transition_probs[current_idx, next_idx] += 1
         
         # Normalize transition probabilities
         row_sums = transition_probs.sum(axis=1, keepdims=True)
@@ -810,27 +923,29 @@ class TopologicalDataAnalyzer:
         transition_probs = transition_probs / row_sums
         
         # Analyze each regime
-        for regime in range(n_regimes):
+        for regime_idx, regime in enumerate(unique_regimes):
             regime_mask = self.regime_labels == regime
             regime_points = np.where(regime_mask)[0]
-            regime_times = self.timestamps[regime_points]
+            regime_times = self.timestamps[regime_points] if hasattr(self, 'timestamps') and len(regime_points) > 0 else None
             
             if len(regime_points) > 0:
                 # Convert numpy.timedelta64 to pandas Timedelta for duration calculation
-                if np.issubdtype(regime_times.dtype, np.datetime64):
-                    start_time = pd.Timestamp(min(regime_times))
-                    end_time = pd.Timestamp(max(regime_times))
-                    duration = (end_time - start_time).total_seconds()
+                if regime_times is not None and np.issubdtype(regime_times.dtype, np.datetime64):
+                    start_time_val = pd.Timestamp(min(regime_times))
+                    end_time_val = pd.Timestamp(max(regime_times))
+                    duration = (end_time_val - start_time_val).total_seconds()
                 else:
                     # If not datetime, use number of points as duration
                     duration = len(regime_points)
+                    start_time_val = regime_points[0] if len(regime_points) > 0 else 0
+                    end_time_val = regime_points[-1] if len(regime_points) > 0 else 0
                 
                 # Calculate regime statistics
                 stats = {
-                    'regime_id': regime,
+                    'regime_id': int(regime),  # Convert to int to avoid issues with numpy types
                     'size': len(regime_points),
-                    'start_time': start_time if np.issubdtype(regime_times.dtype, np.datetime64) else regime_points[0],
-                    'end_time': end_time if np.issubdtype(regime_times.dtype, np.datetime64) else regime_points[-1],
+                    'start_time': start_time_val,
+                    'end_time': end_time_val,
                     'duration': duration,
                     'points': regime_points.tolist()
                 }
@@ -841,9 +956,13 @@ class TopologicalDataAnalyzer:
             'regime_labels': self.regime_labels,
             'regime_stats': regime_stats,
             'transition_probs': transition_probs,
-            'n_regimes': n_regimes
+            'n_regimes': n_regimes,
+            'unique_regimes': unique_regimes.tolist(),
+            'regime_to_idx': regime_to_idx,
+            'idx_to_regime': idx_to_regime
         }
         
+        print(f"Regime analysis completed in {time.time() - start_time:.2f} seconds")
         return result
 
     def compute_zigzag_persistence(self, window_size=100, overlap=50):
@@ -1093,10 +1212,12 @@ class TopologicalDataAnalyzer:
         dict
             Dictionary containing path zigzag persistence diagrams
         """
+        start_time = time.time()
         print("Computing persistent path zigzag homology for market microstructure...")
         
         try:
             # Create sequence of directed networks for each window
+            network_start = time.time()
             networks = []
             window_indices = []
             
@@ -1129,6 +1250,8 @@ class TopologicalDataAnalyzer:
                 
                 networks.append(G)
             
+            print(f"Network creation completed in {time.time() - network_start:.2f} seconds")
+            
             # For each network window, compute path complex
             path_complexes = []
             for G in networks:
@@ -1143,6 +1266,7 @@ class TopologicalDataAnalyzer:
             }
             
             # Process each dimension
+            dimension_start = time.time()
             for dim in range(max_path_length + 1):
                 betti_series = []
                 
@@ -1264,6 +1388,7 @@ class TopologicalDataAnalyzer:
                     plt.savefig(os.path.join(output_dir, 'path_zigzag_transitions.png'))
                     plt.close()
             
+            print(f"Total path zigzag persistence computation completed in {time.time() - start_time:.2f} seconds")
             return self.path_zigzag_diagrams
             
         except Exception as e:

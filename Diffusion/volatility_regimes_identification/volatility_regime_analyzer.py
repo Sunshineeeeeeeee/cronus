@@ -6,6 +6,7 @@ from .microstructure_features import MicrostructureFeatureEngine
 from .information_theory import InformationTheoryEnhancer
 from .topological_analyzer import TopologicalDataAnalyzer
 import warnings
+from sklearn.preprocessing import StandardScaler
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -63,7 +64,8 @@ class VolatilityRegimeAnalyzer:
             
         Returns:
         --------
-        self
+        tuple
+            (features, feature_names, updated_df, self)
         """
         if self.df is None:
             raise ValueError("DataFrame must be provided")
@@ -80,7 +82,8 @@ class VolatilityRegimeAnalyzer:
         
         self.features, self.feature_names, self.df = self.feature_engine.extract_all_features(window_sizes)
         
-        return self
+        # Return the computed features, feature names, and updated dataframe along with self
+        return self.features, self.feature_names, self.df, self
         
     def _compute_entropy(self):
         """
@@ -103,7 +106,7 @@ class VolatilityRegimeAnalyzer:
             
         return self.info_enhancer.entropy
         
-    def enhance_features(self, n_features=10, include_entropy=True, include_kl=True):
+    def enhance_features(self, n_features=10, include_entropy=True, include_kl=True, is_training=True):
         """
         Apply information-theoretic feature enhancement.
         
@@ -115,6 +118,8 @@ class VolatilityRegimeAnalyzer:
             Whether to include entropy-weighted features
         include_kl : bool
             Whether to include KL divergence features
+        is_training : bool
+            Whether this is the training phase (if False, skip MI computation)
             
         Returns:
         --------
@@ -127,21 +132,23 @@ class VolatilityRegimeAnalyzer:
         
         self.info_enhancer = InformationTheoryEnhancer(self.features, self.feature_names)
         
-        # Calculate information-theoretic measures
-        self.info_enhancer.estimate_shannon_entropy()
-        self.info_enhancer.compute_mutual_information_matrix()
-        
-        if include_kl:
-            self.info_enhancer.compute_kl_divergence()
+        # Calculate information-theoretic measures only during training
+        if is_training:
+            self.info_enhancer.estimate_shannon_entropy()
+            self.info_enhancer.compute_mutual_information_matrix()
             
-        # Rank features by importance
-        self.info_enhancer.rank_features_by_importance()
+            if include_kl:
+                self.info_enhancer.compute_kl_divergence()
+                
+            # Rank features by importance
+            self.info_enhancer.rank_features_by_importance()
         
         # Create enhanced feature set
         self.enhanced_features, self.enhanced_feature_names = self.info_enhancer.enhance_features(
             n_features=n_features,
             include_entropy=include_entropy,
-            include_kl=include_kl
+            include_kl=include_kl,
+            is_training=is_training
         )
         
         return self
@@ -292,111 +299,159 @@ class VolatilityRegimeAnalyzer:
             volatility_col=self.volatility_col
         )
         
-        new_features, _, new_df_processed = new_feature_engine.extract_all_features(
-            window_sizes=[10, 50, 100] 
+        # Extract features and get feature names from the return value
+        # Use the same window sizes as in training
+        window_sizes_to_use = getattr(self, 'window_sizes', [10, 50, 100])
+        print(f"Using window sizes for feature extraction: {window_sizes_to_use}")
+        new_features, new_feature_names, new_df_processed = new_feature_engine.extract_all_features(
+            window_sizes=window_sizes_to_use
         )
         
         # 2. Get feature selection if available
         if self.enhanced_features is not None and self.info_enhancer is not None:
-            # Select the same features that were used during training
-            top_indices = self.info_enhancer.select_top_features()
+            # Create new information theory enhancer
+            new_info_enhancer = InformationTheoryEnhancer(
+                new_features,
+                new_feature_names  # Use the feature names from the return value
+            )
+            
+            # Select the same features that were used during training using stored importance
+            if hasattr(self.info_enhancer, 'feature_importance'):
+                # Copy feature importance to avoid recomputing
+                new_info_enhancer.feature_importance = self.info_enhancer.feature_importance
+                top_indices = new_info_enhancer.select_top_features()
+            else:
+                # If no feature importance, compute it using FFT approximation
+                print("Computing mutual information using FFT approximation...")
+                # Always use FFT-based MI computation
+                n_samples = len(new_df)
+                n_bins = min(256, max(64, int(np.sqrt(n_samples / 50))))
+                new_info_enhancer.compute_mutual_information_matrix(
+                    use_fft=True,  # Always use FFT
+                    fft_bins=n_bins
+                )
+                
+                # Rank features and select top ones
+                new_info_enhancer.rank_features_by_importance()
+                top_indices = new_info_enhancer.select_top_features()
+            
             selected_features = new_features[:, top_indices]
             
-            # Apply any entropy weighting or KL divergence enhancement if used during training
+            # Apply any entropy weighting if used during training
             if hasattr(self.info_enhancer, 'entropy') and len(self.enhanced_feature_names) > len(top_indices):
-                entropy_weights = self.info_enhancer.entropy[top_indices] / np.sum(self.info_enhancer.entropy[top_indices])
+                # Copy entropy from trained model if available
+                new_info_enhancer.entropy = self.info_enhancer.entropy
+                entropy_weights = new_info_enhancer.entropy[top_indices] / np.sum(new_info_enhancer.entropy[top_indices])
                 entropy_weighted = selected_features * entropy_weights.reshape(1, -1)
                 new_enhanced_features = np.column_stack([selected_features, entropy_weighted])
             else:
-                new_enhanced_features = selected_features
+                # If entropy is needed but not available from trained model
+                if len(self.enhanced_feature_names) > len(top_indices):
+                    # Compute entropy for new data
+                    print("Computing entropy for new data...")
+                    new_info_enhancer.estimate_shannon_entropy()
+                    entropy_weights = new_info_enhancer.entropy[top_indices] / np.sum(new_info_enhancer.entropy[top_indices])
+                    entropy_weighted = selected_features * entropy_weights.reshape(1, -1)
+                    new_enhanced_features = np.column_stack([selected_features, entropy_weighted])
+                else:
+                    new_enhanced_features = selected_features
         else:
             # If no enhancement was done, use all features
             new_enhanced_features = new_features
             
         # 3. Calculate distances from each new point to each existing regime centroid
+        # Get the unique regime labels which may not be sequential
+        unique_regimes = np.unique(self.regime_labels)
         regime_centroids = {}
-        for regime in range(len(np.unique(self.regime_labels))):
+        
+        # Print information about feature dimensions
+        print(f"Training features shape: {self.enhanced_features.shape}, New features shape: {new_enhanced_features.shape}")
+        
+        # Handle feature dimension mismatch with safer approach
+        # First normalize each set of features separately to ensure consistency
+        from sklearn.preprocessing import StandardScaler
+        
+        # Scale training features
+        training_scaler = StandardScaler()
+        scaled_training_features = training_scaler.fit_transform(self.enhanced_features)
+        
+        # Scale new features independently
+        new_scaler = StandardScaler()
+        scaled_new_features = new_scaler.fit_transform(new_enhanced_features)
+        
+        # Compute centroids from scaled training data
+        for regime in unique_regimes:
             regime_points = np.where(self.regime_labels == regime)[0]
-            regime_centroids[regime] = np.mean(self.enhanced_features[regime_points], axis=0)
+            if len(regime_points) > 0:
+                regime_centroids[regime] = np.mean(scaled_training_features[regime_points], axis=0)
+                
+        # Check and adjust dimensions if needed
+        min_dim = min(scaled_training_features.shape[1], scaled_new_features.shape[1])
+        if scaled_training_features.shape[1] != scaled_new_features.shape[1]:
+            print(f"Dimension mismatch: Training has {scaled_training_features.shape[1]} features, new data has {scaled_new_features.shape[1]} features")
+            print(f"Using only the first {min_dim} dimensions for centroid distance calculation")
             
+            # Trim centroids to consistent dimension
+            for regime in regime_centroids:
+                regime_centroids[regime] = regime_centroids[regime][:min_dim]
+                
+            # Trim new features to consistent dimension
+            scaled_new_features = scaled_new_features[:, :min_dim]
+        
         # Assign each new point to the nearest regime
         n_new_points = len(new_enhanced_features)
         new_regime_labels = np.zeros(n_new_points, dtype=int)
+        confidences = []
         
-        for i in range(n_new_points):
-            min_dist = float('inf')
-            nearest_regime = 0
-            
-            for regime, centroid in regime_centroids.items():
-                # Calculate Euclidean distance
-                if len(new_enhanced_features[i]) == len(centroid):
-                    dist = np.sqrt(np.sum((new_enhanced_features[i] - centroid) ** 2))
-                else:
-                    # Handle feature dimension mismatch (use common features)
-                    min_dim = min(len(new_enhanced_features[i]), len(centroid))
-                    dist = np.sqrt(np.sum((new_enhanced_features[i][:min_dim] - centroid[:min_dim]) ** 2))
-                
-                if dist < min_dist:
-                    min_dist = dist
-                    nearest_regime = regime
-                    
-            new_regime_labels[i] = nearest_regime
-            
-        # Add regime labels to the processed dataframe
-        new_df_processed['regime'] = new_regime_labels
-        
-        # Calculate confidence metrics (distance to assigned regime centroid vs. next closest)
-        if len(regime_centroids) > 1:
-            confidences = []
-            
+        # Check if we have centroids for all regimes
+        if len(regime_centroids) == 0:
+            print("Warning: No valid regime centroids found. Using fallback assignment.")
+            # Fallback: assign all to the most common regime in the training data
+            most_common_regime = np.argmax(np.bincount(self.regime_labels))
+            new_regime_labels.fill(most_common_regime)
+            confidences = [1.0] * n_new_points
+        else:
+            # Calculate distances using scaled features
             for i in range(n_new_points):
-                assigned_regime = new_regime_labels[i]
-                assigned_centroid = regime_centroids[assigned_regime]
+                min_dist = float('inf')
+                nearest_regime = unique_regimes[0]  # Default to first regime
                 
-                # Distance to assigned centroid
-                if len(new_enhanced_features[i]) == len(assigned_centroid):
-                    assigned_dist = np.sqrt(np.sum((new_enhanced_features[i] - assigned_centroid) ** 2))
-                else:
-                    min_dim = min(len(new_enhanced_features[i]), len(assigned_centroid))
-                    assigned_dist = np.sqrt(np.sum((new_enhanced_features[i][:min_dim] - assigned_centroid[:min_dim]) ** 2))
-                
-                # Find next closest centroid
-                next_closest_dist = float('inf')
-                
+                # Calculate distances to all centroids
+                distances = {}
                 for regime, centroid in regime_centroids.items():
-                    if regime == assigned_regime:
-                        continue
-                        
-                    if len(new_enhanced_features[i]) == len(centroid):
-                        dist = np.sqrt(np.sum((new_enhanced_features[i] - centroid) ** 2))
-                    else:
-                        min_dim = min(len(new_enhanced_features[i]), len(centroid))
-                        dist = np.sqrt(np.sum((new_enhanced_features[i][:min_dim] - centroid[:min_dim]) ** 2))
-                        
-                    if dist < next_closest_dist:
-                        next_closest_dist = dist
-                
-                # Confidence metric: ratio of distances (higher is better)
-                if assigned_dist > 0:
-                    confidence = next_closest_dist / assigned_dist
-                else:
-                    confidence = float('inf')  # Perfect match to centroid
+                    # Use Euclidean distance with proper dimensions
+                    dist = np.sqrt(np.sum((scaled_new_features[i] - centroid) ** 2))
+                    distances[regime] = dist
                     
-                confidences.append(confidence)
+                    if dist < min_dist:
+                        min_dist = dist
+                        nearest_regime = regime
                 
-            new_df_processed['regime_confidence'] = confidences
+                new_regime_labels[i] = nearest_regime
+                
+                # Calculate confidence as ratio of distances
+                sorted_dists = sorted(distances.values())
+                if len(sorted_dists) > 1:
+                    confidence = sorted_dists[1] / (sorted_dists[0] + 1e-10)  # Second closest / closest
+                else:
+                    confidence = 2.0  # High confidence if only one regime
+                confidences.append(confidence)
             
+            # Debug information
+            print(f"Regime assignments: {np.unique(new_regime_labels, return_counts=True)}")
+        
+        # Add regime labels and confidence scores to the processed dataframe
+        new_df_processed['regime'] = new_regime_labels
+        new_df_processed['regime_confidence'] = confidences
+        
         print(f"Labeled {n_new_points} new data points")
         
-        # Merge regime labels back to original dataframe (if desired)
-        # This ensures any columns from the original dataframe are preserved
+        # Merge regime labels back to original dataframe
         if set(new_df_processed.index) == set(new_df.index):
             result_df = new_df.copy()
             result_df['regime'] = new_df_processed['regime']
-            if 'regime_confidence' in new_df_processed.columns:
-                result_df['regime_confidence'] = new_df_processed['regime_confidence']
+            result_df['regime_confidence'] = new_df_processed['regime_confidence']
         else:
-            # Handle case where indices might not match
             result_df = new_df_processed
             
         return result_df
@@ -422,6 +477,13 @@ class VolatilityRegimeAnalyzer:
         transition_probs = self.regime_analysis['transition_probs']
         n_regimes = self.regime_analysis['n_regimes']
         
+        # Get regime mappings if available
+        regime_to_idx = self.regime_analysis.get('regime_to_idx', {})
+        idx_to_regime = self.regime_analysis.get('idx_to_regime', {})
+        
+        # Use mappings if available, otherwise assume sequential regimes
+        use_mapping = len(regime_to_idx) > 0 and len(idx_to_regime) > 0
+        
         # Get current regime (last observed point)
         current_regime = self.regime_labels[-1]
         
@@ -430,15 +492,28 @@ class VolatilityRegimeAnalyzer:
         
         # Simple Markov chain prediction
         for _ in range(steps_ahead):
+            # Get index for current regime
+            if use_mapping:
+                current_idx = regime_to_idx.get(current_regime, 0)
+            else:
+                current_idx = current_regime
+                
             # Get transition probabilities from current regime
-            probs = transition_probs[current_regime]
+            probs = transition_probs[current_idx]
             
             # If all zeros (no observed transitions), assume uniform distribution
             if np.sum(probs) == 0:
                 probs = np.ones(n_regimes) / n_regimes
                 
-            # Sample next regime based on transition probabilities
-            next_regime = np.random.choice(n_regimes, p=probs)
+            # Sample next regime index based on transition probabilities
+            next_idx = np.random.choice(n_regimes, p=probs)
+            
+            # Convert back to actual regime value if using mapping
+            if use_mapping:
+                next_regime = idx_to_regime.get(next_idx, next_idx)
+            else:
+                next_regime = next_idx
+                
             predictions.append(next_regime)
             
             # Update current regime for next iteration
@@ -525,3 +600,99 @@ class VolatilityRegimeAnalyzer:
             return analyzer, labeled_df
             
         return analyzer 
+
+    def _apply_patterns_to_full_dataset(self, df, timestamp_col, price_col, volume_col, volatility_col):
+        """
+        Apply learned patterns to the full dataset.
+        """
+        print("Applying learned patterns to full dataset...")
+        
+        # Process the full dataset through the same pipeline
+        full_analyzer = VolatilityRegimeAnalyzer(
+            df=df,
+            timestamp_col=timestamp_col,
+            price_col=price_col,
+            volume_col=volume_col,
+            volatility_col=volatility_col
+        )
+        
+        # Copy window_sizes to the new analyzer
+        full_analyzer.window_sizes = self.window_sizes
+        print(f"Using window sizes: {self.window_sizes}")
+        
+        # Use the same feature computation but skip MI computation
+        print("Computing microstructure features...")
+        full_analyzer.features, full_analyzer.feature_names, _, _ = full_analyzer.compute_features(window_sizes=self.window_sizes)
+        
+        # Apply feature enhancement without computing MI
+        if hasattr(self, 'info_enhancer') and self.info_enhancer is not None:
+            print("Enhancing features using FFT approximation for mutual information...")
+            # Copy necessary attributes from trained model
+            n_features = len(self.enhanced_feature_names) if hasattr(self, 'enhanced_feature_names') else 10
+            
+            if hasattr(self, 'enhanced_feature_names') and len(self.enhanced_feature_names) > 0 and '_ent_weighted' in self.enhanced_feature_names[0]:
+                # If feature names contain _ent_weighted, we need to calculate the actual number of base features
+                n_features = len([f for f in self.enhanced_feature_names if not ('_ent_weighted' in f or '_kl' in f)])
+            
+            # Create a new info enhancer but copy over feature importance from trained model
+            full_analyzer.info_enhancer = InformationTheoryEnhancer(
+                full_analyzer.features, 
+                full_analyzer.feature_names
+            )
+            
+            # Copy feature importance from trained model to avoid recomputing
+            if hasattr(self.info_enhancer, 'feature_importance'):
+                full_analyzer.info_enhancer.feature_importance = self.info_enhancer.feature_importance
+            
+            # Copy entropy from trained model if available
+            if hasattr(self.info_enhancer, 'entropy'):
+                full_analyzer.info_enhancer.entropy = self.info_enhancer.entropy
+            else:
+                # If entropy is needed but not available from trained model, compute it
+                print("Computing entropy using FFT approximation...")
+                full_analyzer.info_enhancer.estimate_shannon_entropy()
+                
+            # Check if mutual information is needed but not available from trained model
+            mi_needed = False
+            if hasattr(self, 'enhanced_feature_names'):
+                for feat in self.enhanced_feature_names:
+                    if '_ent_weighted' in feat:
+                        mi_needed = True
+                        break
+                    
+            if mi_needed and not hasattr(self.info_enhancer, 'mi_matrix'):
+                print("Computing mutual information using FFT approximation for the full dataset...")
+                # Always use FFT-based MI computation for the full dataset
+                n_samples = full_analyzer.info_enhancer.n_samples
+                n_bins = min(256, max(64, int(np.sqrt(n_samples / 50))))  # Adjusted for better approximation
+                
+                # Force using FFT for mutual information computation
+                full_analyzer.info_enhancer.compute_mutual_information_matrix(
+                    use_fft=True,  # Always use FFT
+                    fft_bins=n_bins
+                )
+                
+                # Rank features after computing MI
+                full_analyzer.info_enhancer.rank_features_by_importance()
+                
+            # Enhance features
+            full_analyzer.enhanced_features, full_analyzer.enhanced_feature_names = full_analyzer.info_enhancer.enhance_features(
+                n_features=n_features,
+                include_entropy=True,
+                include_kl=False,  # Skip KL divergence for speed
+                is_training=False  # Skip MI recomputation if already done
+            )
+        else:
+            # Fallback if no info enhancer is available
+            full_analyzer.enhanced_features = full_analyzer.features
+            full_analyzer.enhanced_feature_names = full_analyzer.feature_names
+        
+        # Copy trained model components
+        full_analyzer.regime_labels = self.regime_labels  # Use regime_labels, not regimes
+        full_analyzer.tda = self.tda
+        full_analyzer.regime_analysis = self.regime_analysis
+        
+        # Use the learned patterns to label the full dataset - use the same window_sizes for new data
+        df_with_regimes = full_analyzer.label_new_data(df)
+        
+        return df_with_regimes 

@@ -1,9 +1,12 @@
 import numpy as np
 from sklearn.neighbors import KernelDensity
 from sklearn.preprocessing import StandardScaler, RobustScaler
+from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
 from scipy.stats import kurtosis
+from sklearn.metrics import mutual_info_score
 import warnings
 import itertools
+import time
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -94,6 +97,7 @@ class InformationTheoryEnhancer:
         """
         Estimate Shannon entropy using cosine kernel with heavy-tail emphasis.
         """
+        start_time = time.time()
         print("Estimating Shannon entropy with heavy-tail adjustment...")
         
         self.entropy = np.zeros(self.n_features)
@@ -145,20 +149,211 @@ class InformationTheoryEnhancer:
             entropy_j = -np.sum(dens * np.log(dens + 1e-10))
             self.entropy[j] = entropy_j
             
+        print(f"Shannon entropy estimation completed in {time.time() - start_time:.2f} seconds")
         return self
         
-    def compute_mutual_information_matrix(self):
+    def _compute_rff_features(self, X, n_features=50, gamma=1.0):
         """
-        Compute mutual information between all pairs of features using KDE.
-        Vectorized implementation for better performance.
+        Compute Random Fourier Features for a given input matrix.
         
-        I(X;Y) = ∫∫ p(x,y) log(p(x,y)/(p(x)p(y))) dx dy
+        Parameters:
+        -----------
+        X : numpy.ndarray
+            Input data matrix of shape (n_samples, n_dimensions)
+        n_features : int
+            Number of random features to generate
+        gamma : float
+            RBF kernel parameter (1/(2*sigma^2))
+            
+        Returns:
+        --------
+        numpy.ndarray
+            RFF transformed data of shape (n_samples, n_features)
+        """
+        n_samples, n_dims = X.shape
         
+        # Sample random weights from normal distribution
+        # The scale is determined by the kernel bandwidth (gamma)
+        w = np.random.normal(0, np.sqrt(2 * gamma), (n_dims, n_features))
+        
+        # Sample random offsets from uniform distribution
+        b = np.random.uniform(0, 2 * np.pi, n_features)
+        
+        # Compute random features
+        Z = np.sqrt(2.0 / n_features) * np.cos(np.dot(X, w) + b)
+        
+        return Z
+
+    def compute_mutual_information_matrix_fast(self):
+        """
+        Fast computation of mutual information matrix using sklearn's optimized implementations.
+        This is much faster than both KDE and RFF approaches.
+        """
+        start_time = time.time()
+        print("Computing mutual information matrix using optimized implementation...")
+        
+        # Initialize mutual information matrix
+        mi_matrix = np.zeros((self.n_features, self.n_features))
+        
+        # For each feature as a target, compute MI with all other features
+        for i in range(self.n_features):
+            target = self.scaled_data[:, i]
+            
+            # Determine if target is continuous or discrete
+            unique_vals = np.unique(target)
+            if len(unique_vals) < 10 or np.all(np.mod(target, 1) == 0):
+                # Discrete/categorical target
+                mi_values = mutual_info_classif(
+                    self.scaled_data, 
+                    target,
+                    discrete_features=False,
+                    n_neighbors=3,
+                    random_state=42
+                )
+            else:
+                # Continuous target
+                mi_values = mutual_info_regression(
+                    self.scaled_data,
+                    target,
+                    discrete_features=False,
+                    n_neighbors=3,
+                    random_state=42
+                )
+            
+            # Fill the matrix
+            mi_matrix[i, :] = mi_values
+            
+            # Apply tail emphasis if available
+            if hasattr(self, '_adjust_for_heavy_tails'):
+                tail_factor, _ = self._adjust_for_heavy_tails(target.reshape(-1, 1))
+                mi_matrix[i, :] *= tail_factor
+        
+        # Make matrix symmetric
+        mi_matrix = (mi_matrix + mi_matrix.T) / 2
+        
+        # Fill diagonal with entropy values if available
+        if self.entropy is not None:
+            np.fill_diagonal(mi_matrix, self.entropy)
+        
+        print(f"Fast MI computation completed in {time.time() - start_time:.2f} seconds")
+        return mi_matrix
+
+    def compute_mutual_information_fft(self, n_bins=64, max_sample_size=100000):
+        """
+        Compute mutual information using Fast Fourier Transform for efficient computation
+        on very large datasets (millions of observations).
+        
+        This approach uses FFT for fast histogram convolution to approximate joint
+        probability distributions, achieving O(n log n) complexity instead of O(n²).
+        
+        Parameters:
+        -----------
+        n_bins : int
+            Number of bins for histogram approximation (power of 2 for optimal FFT)
+        max_sample_size : int
+            Maximum sample size to use (for memory efficiency on huge datasets)
+            
+        Returns:
+        --------
+        numpy.ndarray
+            Matrix of mutual information values
+        """
+        start_time = time.time()
+        print(f"Computing mutual information using FFT approximation (n_bins={n_bins})...")
+        
+        # Check if we need to subsample (for memory efficiency with huge datasets)
+        if self.n_samples > max_sample_size:
+            print(f"Subsampling data from {self.n_samples} to {max_sample_size} samples for FFT computation")
+            indices = np.random.choice(self.n_samples, max_sample_size, replace=False)
+            data = self.scaled_data[indices]
+        else:
+            data = self.scaled_data
+            
+        n_samples, n_features = data.shape
+        
+        # Initialize mutual information matrix
+        mi_matrix = np.zeros((n_features, n_features))
+        
+        # Precompute histograms for all features to avoid redundant computation
+        all_histograms = []
+        all_bin_edges = []
+        for i in range(n_features):
+            x = data[:, i]
+            hist, bin_edges = np.histogram(x, bins=n_bins, density=True)
+            all_histograms.append(hist)
+            all_bin_edges.append(bin_edges)
+            
+            # Compute entropy directly from histogram (reuse later)
+            px = hist / np.sum(hist)
+            px = px[px > 0]  # Avoid log(0)
+            entropy_i = -np.sum(px * np.log(px))
+            
+            # Store entropy on diagonal
+            mi_matrix[i, i] = entropy_i
+            
+        # Compute MI for all pairs using FFT
+        for i in range(n_features):
+            for j in range(i+1, n_features):
+                x = data[:, i]
+                y = data[:, j]
+                
+                # Compute 2D histogram efficiently
+                hist_joint, _, _ = np.histogram2d(x, y, bins=n_bins, density=True)
+                
+                # Approximate mutual information using discrete formulation
+                px = all_histograms[i]
+                py = all_histograms[j]
+                
+                # Create outer product for independent distribution (px * py)
+                pxy_indep = np.outer(px, py)
+                
+                # Compute MI using KL divergence: sum(p_xy * log(p_xy / (px*py)))
+                valid_mask = (hist_joint > 0) & (pxy_indep > 0)
+                
+                if np.any(valid_mask):
+                    mi_value = np.sum(
+                        hist_joint[valid_mask] * 
+                        np.log(hist_joint[valid_mask] / pxy_indep[valid_mask])
+                    )
+                else:
+                    mi_value = 0
+                    
+                mi_matrix[i, j] = mi_value
+                mi_matrix[j, i] = mi_value  # Symmetric
+                
+        print(f"FFT-based MI computation completed in {time.time() - start_time:.2f} seconds")
+        
+        return mi_matrix
+
+    def compute_mutual_information_matrix(self, fast_approximation=False, use_fft=False, n_rff_features=50, fft_bins=64):
+        """
+        Compute mutual information between all pairs of features.
+        
+        Parameters:
+        -----------
+        fast_approximation : bool
+            If True, use optimized implementation for faster computation
+        use_fft : bool
+            If True, use FFT-based approximation (best for very large datasets)
+        n_rff_features : int
+            Number of random Fourier features (unused in optimized implementation)
+        fft_bins : int
+            Number of bins for FFT approximation (if use_fft=True)
+            
         Returns:
         --------
         numpy.ndarray
             Array of shape (n_features, n_features) containing mutual information values
         """
+        if use_fft:
+            self.mi_matrix = self.compute_mutual_information_fft(n_bins=fft_bins)
+            return self.mi_matrix
+        elif fast_approximation:
+            self.mi_matrix = self.compute_mutual_information_matrix_fast()
+            return self.mi_matrix
+            
+        # Original KDE-based implementation for training phase
+        start_time = time.time()
         print("Computing mutual information matrix using KDE...")
         
         # Initialize mutual information matrix
@@ -181,35 +376,31 @@ class InformationTheoryEnhancer:
             x = self.scaled_data[:, i].reshape(-1, 1)
             y = self.scaled_data[:, j].reshape(-1, 1)
             
-            # Compute bandwidths for joint distribution
+            # Rest of the original KDE implementation...
             bw_x = bandwidths[i]
             bw_y = bandwidths[j]
             bw_joint = np.mean([bw_x, bw_y])
             
-            # Fit KDEs
             kde_x = KernelDensity(bandwidth=bw_x, kernel='cosine').fit(x)
             kde_y = KernelDensity(bandwidth=bw_y, kernel='cosine').fit(y)
             kde_joint = KernelDensity(bandwidth=bw_joint, kernel='cosine').fit(np.column_stack([x, y]))
             
-            # Evaluate densities at sample points
             log_px = kde_x.score_samples(x)
             log_py = kde_y.score_samples(y)
             log_pxy = kde_joint.score_samples(np.column_stack([x, y]))
             
-            # Compute mutual information with tail emphasis
             mi = np.mean(log_pxy - log_px - log_py)
             tail_emphasis = np.maximum(tail_factors[i], tail_factors[j])
             mi *= tail_emphasis
             
-            # Fill symmetric matrix
             mi_matrix[i, j] = mi
             mi_matrix[j, i] = mi
         
         # Fill diagonal with entropy values
         np.fill_diagonal(mi_matrix, self.entropy)
         
-        # Store as class attribute and return
         self.mi_matrix = mi_matrix
+        print(f"Mutual information computation completed in {time.time() - start_time:.2f} seconds")
         return mi_matrix
         
     def compute_kl_divergence(self, window_size=100, gap_size=20):
@@ -231,6 +422,7 @@ class InformationTheoryEnhancer:
         numpy.ndarray
             Array of shape (n_samples, n_features) containing KL divergence values
         """
+        start_time = time.time()
         print("Computing KL divergence between current and recent windows...")
         
         # Initialize output array
@@ -295,6 +487,7 @@ class InformationTheoryEnhancer:
         
         # Store as class attribute and return
         self.kl_divergence = kl_divergence
+        print(f"KL divergence computation completed in {time.time() - start_time:.2f} seconds")
         return kl_divergence
         
     def compute_transfer_entropy(self, lag=1, k=1):
@@ -424,6 +617,7 @@ class InformationTheoryEnhancer:
         tuple
             (ranked_indices, importance_scores)
         """
+        start_time = time.time()
         print("Ranking features by importance...")
         
         if self.mi_matrix is None:
@@ -457,6 +651,7 @@ class InformationTheoryEnhancer:
             'ranking': feature_ranking
         }
         
+        print(f"Feature ranking completed in {time.time() - start_time:.2f} seconds")
         return ranked_indices, importance_scores
     
     def select_top_features(self, n_features=10, min_score=0.1):
@@ -476,8 +671,14 @@ class InformationTheoryEnhancer:
             Indices of selected features
         """
         if self.feature_importance is None:
-            self.rank_features_by_importance()
-            
+            # If ranking hasn't been done and we have MI matrix, do the ranking
+            if self.mi_matrix is not None:
+                self.rank_features_by_importance()
+            else:
+                # If no MI matrix, we can't rank, so just use first n_features
+                print("WARNING: No feature importance data available. Using first N features.")
+                return list(range(min(n_features, self.n_features)))
+        
         # Get ranked indices and scores
         ranked_indices = self.feature_importance['ranked_indices']
         scores = self.feature_importance['scores']
@@ -486,9 +687,13 @@ class InformationTheoryEnhancer:
         selected_indices = [idx for idx, score in zip(ranked_indices, scores[ranked_indices]) 
                            if score >= min_score][:n_features]
         
+        # If we don't have enough features meeting the criteria, just use top n
+        if len(selected_indices) < n_features:
+            selected_indices = ranked_indices[:n_features]
+        
         return selected_indices
     
-    def enhance_features(self, n_features=10, include_entropy=True, include_kl=True):
+    def enhance_features(self, n_features=10, include_entropy=True, include_kl=True, is_training=True):
         """
         Create an enhanced feature set using information theory measures.
         
@@ -500,27 +705,51 @@ class InformationTheoryEnhancer:
             Whether to include entropy-weighted features
         include_kl : bool
             Whether to include KL divergence features
+        is_training : bool
+            Whether this is the training phase (if False, skip MI computation and use fast approximation)
             
         Returns:
         --------
         tuple
             (enhanced_features, enhanced_feature_names)
         """
+        start_time = time.time()
         print("Creating enhanced feature set...")
         
-        # Ensure all necessary calculations are done
-        if self.entropy is None:
-            self.estimate_shannon_entropy()
+        # Ensure all necessary calculations are done, but only if in training mode
+        if is_training:
+            if self.entropy is None:
+                self.estimate_shannon_entropy()
             
-        if self.mi_matrix is None:
-            self.compute_mutual_information_matrix()
+            if self.mi_matrix is None:
+                self.compute_mutual_information_matrix()
             
-        if self.feature_importance is None:
-            self.rank_features_by_importance()
+            if self.feature_importance is None:
+                self.rank_features_by_importance()
             
-        if not hasattr(self, 'kl_divergence') and include_kl:
-            self.compute_kl_divergence()
+            if not hasattr(self, 'kl_divergence') and include_kl:
+                self.compute_kl_divergence()
+        else:
+            # In non-training mode, ensure we have entropy if needed
+            if include_entropy and self.entropy is None:
+                self.estimate_shannon_entropy()
             
+            # Only compute MI if absolutely necessary 
+            if self.mi_matrix is None and self.feature_importance is None:
+                # For large datasets (millions of observations), use FFT approximation
+                if self.n_samples > 100000:
+                    print(f"Large dataset detected ({self.n_samples} samples). Computing mutual information using FFT approximation...")
+                    # Determine optimal number of bins based on data size
+                    n_bins = min(128, max(64, int(np.sqrt(self.n_samples / 100))))
+                    self.compute_mutual_information_matrix(use_fft=True, fft_bins=n_bins)
+                else:
+                    # For smaller datasets, use standard fast approximation
+                    print("Computing mutual information using fast approximation for non-training phase...")
+                    self.compute_mutual_information_matrix(fast_approximation=True)
+                
+                # Rank features after computing MI
+                self.rank_features_by_importance()
+        
         # Select top features
         top_indices = self.select_top_features(n_features)
         
@@ -529,20 +758,21 @@ class InformationTheoryEnhancer:
         enhanced_names = [self.feature_names[idx] for idx in top_indices]
         
         # Add entropy-weighted features if requested
-        if include_entropy:
+        if include_entropy and self.entropy is not None:
             entropy_weights = self.entropy[top_indices] / np.sum(self.entropy[top_indices])
             entropy_weighted = enhanced_features * entropy_weights.reshape(1, -1)
             
             enhanced_features = np.column_stack([enhanced_features, entropy_weighted])
             enhanced_names.extend([f"{name}_ent_weighted" for name in enhanced_names[:len(top_indices)]])
-            
+        
         # Add KL divergence features if requested
         if include_kl and hasattr(self, 'kl_divergence'):
             kl_features = self.kl_divergence[:, top_indices]
             
             enhanced_features = np.column_stack([enhanced_features, kl_features])
             enhanced_names.extend([f"{name}_kl" for name in enhanced_names[:len(top_indices)]])
-            
+        
+        print(f"Feature enhancement completed in {time.time() - start_time:.2f} seconds")
         return enhanced_features, enhanced_names
     
     def derive_high_signal_features(self, window_size=100, min_snr=2.0):

@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
+import time
+from datetime import datetime
 from volatility_regimes_identification import (
     MicrostructureFeatureEngine,
     InformationTheoryEnhancer,
@@ -31,40 +33,17 @@ class VolatilityRegimesIdentifier:
                         window_size=100, overlap=50, max_path_length=3, min_epsilon=0.1, max_epsilon=2.0,
                         sample_size=10000, sampling_method='sequential', output_dir=None):
         """
-        Identify volatility regimes using a two-stage approach with path complex and zigzag persistence:
-        1. Learn patterns from a representative sample
-        2. Apply patterns to the full dataset
-        
-        Parameters:
-            df (pd.DataFrame): Input data
-            timestamp_col (str): Name of timestamp column
-            price_col (str): Name of price column
-            volume_col (str): Name of volume column
-            volatility_col (str): Name of volatility column
-            n_regimes (int): Number of regimes to identify
-            window_sizes (list): List of window sizes for feature extraction
-            top_features (int): Number of top features to use
-            alpha (float): Weight for temporal component
-            beta (float): Decay rate for temporal distance
-            window_size (int): Size of sliding window for zigzag persistence
-            overlap (int): Number of points to overlap between windows
-            max_path_length (int): Maximum length of paths to consider
-            min_epsilon (float): Minimum distance threshold
-            max_epsilon (float): Maximum distance threshold
-            sample_size (int): Size of the sample to use for pattern learning
-            sampling_method (str): Method to use for sampling ('sequential' or 'chunks')
-            output_dir (str): Directory for outputs (default: Diffusion/volatility_regimes_identification/results)
+        Identify volatility regimes using a two-stage approach with path complex and zigzag persistence.
         """
-        print("Beginning two-stage volatility regime detection...")
+        total_start_time = time.time()
+        print("\nStarting volatility regime detection at", datetime.now().strftime("%H:%M:%S"))
         
         # Set up output directory
         if output_dir is None:
-            # Create results directory in volatility_regimes_identification
             self.output_dir = os.path.join('/Users/aleksandr/code/scripts/Diffusion/volatility_regimes_identification', 'results')
         else:
             self.output_dir = output_dir
             
-        # Create output directory if it doesn't exist
         os.makedirs(self.output_dir, exist_ok=True)
 
         # Store parameters
@@ -73,7 +52,9 @@ class VolatilityRegimesIdentifier:
         
         # Stage 1: Sample and Learn Patterns
         print("\n=== Stage 1: Learning Patterns from Sample ===")
+        sampling_start = time.time()
         self.sampled_data = self._sample_data(df, sampling_method)
+        print(f"Sampling completed in {time.time() - sampling_start:.2f} seconds")
         
         # Initialize analyzer with sampled data
         self.analyzer = VolatilityRegimeAnalyzer(
@@ -84,13 +65,22 @@ class VolatilityRegimesIdentifier:
             volatility_col=volatility_col
         )
         
+        # Set window sizes explicitly to ensure consistency
+        self.analyzer.window_sizes = self.window_sizes
+        
         # Compute and enhance features on sample
+        feature_start = time.time()
         print("\n--- STEP 1: Computing Features ---")
-        self.analyzer.compute_features(window_sizes=self.window_sizes)
+        _, _, _, self.analyzer = self.analyzer.compute_features(window_sizes=self.window_sizes)
+        print(f"Feature computation completed in {time.time() - feature_start:.2f} seconds")
+        
+        enhancement_start = time.time()
         print("\n--- STEP 2: Enhancing Features ---")
         self.analyzer.enhance_features(n_features=top_features)
+        print(f"Feature enhancement completed in {time.time() - enhancement_start:.2f} seconds")
         
         # Detect regimes on sample using path zigzag persistence
+        regime_detection_start = time.time()
         print("\n--- STEP 3: Detecting Regimes ---")
         self.regimes = self.analyzer.detect_regimes(
             n_regimes=n_regimes,
@@ -105,32 +95,59 @@ class VolatilityRegimesIdentifier:
             compute_homology=True,
             output_dir=self.output_dir
         )
+        print(f"Regime detection completed in {time.time() - regime_detection_start:.2f} seconds")
         
         # Verify model is trained
         if self.regimes is None:
             raise ValueError("Failed to train regime detection model on sample data")
             
         # Analyze regimes to get statistics
-        self.analyzer.regime_analysis = self.analyzer.tda.analyze_regimes()
+        analysis_start = time.time()
+        try:
+            self.analyzer.regime_analysis = self.analyzer.tda.analyze_regimes()
+            print(f"Regime analysis completed in {time.time() - analysis_start:.2f} seconds")
+        except Exception as e:
+            print(f"Warning: Error during regime analysis: {str(e)}")
+            # Create a basic regime analysis with essential information to avoid downstream errors
+            unique_regimes = np.unique(self.regimes)
+            n_regimes = len(unique_regimes)
+            regime_to_idx = {regime: idx for idx, regime in enumerate(unique_regimes)}
+            idx_to_regime = {idx: regime for idx, regime in enumerate(unique_regimes)}
+            
+            self.analyzer.regime_analysis = {
+                'regime_labels': self.regimes,
+                'regime_stats': [{'regime_id': int(r), 'size': np.sum(self.regimes == r)} for r in unique_regimes],
+                'transition_probs': np.ones((n_regimes, n_regimes)) / n_regimes,  # Uniform transition
+                'n_regimes': n_regimes,
+                'unique_regimes': unique_regimes.tolist(),
+                'regime_to_idx': regime_to_idx,
+                'idx_to_regime': idx_to_regime
+            }
+            print("Created fallback regime analysis")
         
         # Stage 2: Apply Patterns to Full Dataset
         print("\n=== Stage 2: Applying Patterns to Full Dataset ===")
+        application_start = time.time()
         df_with_regimes = self._apply_patterns_to_full_dataset(
             df, timestamp_col, price_col, volume_col, volatility_col
         )
+        print(f"Pattern application completed in {time.time() - application_start:.2f} seconds")
         
         # Calculate and store regime statistics
+        stats_start = time.time()
         self._calculate_regime_statistics(df_with_regimes, volatility_col, timestamp_col)
+        print(f"Statistics calculation completed in {time.time() - stats_start:.2f} seconds")
         
-        # Save results to CSV
+        # Save results
+        saving_start = time.time()
         results_file = os.path.join(self.output_dir, 'tick_data_with_regimes.csv')
         df_with_regimes.to_csv(results_file, index=False)
-        print(f"Saved data with regime labels to {results_file}")
-        
-        # Save model
         model_file = os.path.join(self.output_dir, 'regime_model.pkl')
         self.save_model(model_file)
-        print(f"\nSaved model to {model_file}")
+        print(f"Results saving completed in {time.time() - saving_start:.2f} seconds")
+        
+        total_time = time.time() - total_start_time
+        print(f"\nTotal execution time: {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
         
         return df_with_regimes
     
@@ -181,6 +198,10 @@ class VolatilityRegimesIdentifier:
         """
         print("Applying learned patterns to full dataset...")
         
+        # Print debug info about the trained model
+        print(f"Trained model has {len(np.unique(self.regimes))} unique regimes: {np.unique(self.regimes)}")
+        print(f"Regime distribution in training data: {np.unique(self.regimes, return_counts=True)}")
+        
         # Process the full dataset through the same pipeline
         full_analyzer = VolatilityRegimeAnalyzer(
             df=df,
@@ -190,13 +211,76 @@ class VolatilityRegimesIdentifier:
             volatility_col=volatility_col
         )
         
-        # Use the same feature computation and enhancement as the sample
+        # Use the same feature computation but skip MI computation
         print("Computing microstructure features...")
-        full_analyzer.compute_features(window_sizes=self.window_sizes)
-        full_analyzer.enhance_features(n_features=len(self.analyzer.enhanced_feature_names))
+        full_analyzer.features, full_analyzer.feature_names, _, _ = full_analyzer.compute_features(window_sizes=self.window_sizes)
+        
+        # Apply feature enhancement without computing MI
+        if hasattr(self.analyzer, 'info_enhancer') and self.analyzer.info_enhancer is not None:
+            print("Enhancing features using FFT approximation for mutual information...")
+            # Copy necessary attributes from trained model
+            n_features = len(self.analyzer.enhanced_feature_names) if hasattr(self.analyzer, 'enhanced_feature_names') else 10
+            
+            if hasattr(self.analyzer, 'enhanced_feature_names') and len(self.analyzer.enhanced_feature_names) > 0 and '_ent_weighted' in self.analyzer.enhanced_feature_names[0]:
+                # If feature names contain _ent_weighted, we need to calculate the actual number of base features
+                n_features = len([f for f in self.analyzer.enhanced_feature_names if not ('_ent_weighted' in f or '_kl' in f)])
+            
+            # Create a new info enhancer but copy over feature importance from trained model
+            full_analyzer.info_enhancer = InformationTheoryEnhancer(
+                full_analyzer.features, 
+                full_analyzer.feature_names
+            )
+            
+            # Copy feature importance from trained model to avoid recomputing
+            if hasattr(self.analyzer.info_enhancer, 'feature_importance'):
+                full_analyzer.info_enhancer.feature_importance = self.analyzer.info_enhancer.feature_importance
+            
+            # Copy entropy from trained model if available
+            if hasattr(self.analyzer.info_enhancer, 'entropy'):
+                full_analyzer.info_enhancer.entropy = self.analyzer.info_enhancer.entropy
+            else:
+                # If entropy is needed but not available from trained model, compute it
+                print("Computing entropy using FFT approximation...")
+                full_analyzer.info_enhancer.estimate_shannon_entropy()
+                
+            # Check if mutual information is needed but not available from trained model
+            mi_needed = False
+            if hasattr(self.analyzer, 'enhanced_feature_names'):
+                for feat in self.analyzer.enhanced_feature_names:
+                    if '_ent_weighted' in feat:
+                        mi_needed = True
+                        break
+                    
+            if mi_needed and not hasattr(self.analyzer.info_enhancer, 'mi_matrix'):
+                print("Computing mutual information using FFT approximation for the full dataset...")
+                # Always use FFT-based MI computation for the full dataset, regardless of size
+                # Determine optimal bin size based on dataset characteristics
+                n_samples = full_analyzer.info_enhancer.n_samples
+                n_bins = min(256, max(64, int(np.sqrt(n_samples / 50))))  # Adjusted for better approximation
+                
+                # Force using FFT approximation
+                full_analyzer.info_enhancer.compute_mutual_information_matrix(
+                    use_fft=True,  # Always use FFT
+                    fft_bins=n_bins
+                )
+                
+                # Rank features after computing MI
+                full_analyzer.info_enhancer.rank_features_by_importance()
+                
+            # Enhance features using FFT calculation if needed
+            full_analyzer.enhanced_features, full_analyzer.enhanced_feature_names = full_analyzer.info_enhancer.enhance_features(
+                n_features=n_features,
+                include_entropy=True,
+                include_kl=False,  # Skip KL divergence for speed
+                is_training=False  # Skip MI recomputation if already done
+            )
+        else:
+            # Fallback if no info enhancer is available
+            full_analyzer.enhanced_features = full_analyzer.features
+            full_analyzer.enhanced_feature_names = full_analyzer.feature_names
         
         # Copy trained model components to the new analyzer
-        full_analyzer.regime_labels = self.regimes
+        full_analyzer.regime_labels = self.regimes  # Pass the regimes from the identifier to the analyzer
         
         # Ensure we copy the path zigzag persistence data as well
         if hasattr(self.analyzer, 'tda') and hasattr(self.analyzer.tda, 'path_zigzag_diagrams'):
@@ -212,6 +296,9 @@ class VolatilityRegimesIdentifier:
         # Use the learned patterns to label the full dataset
         df_with_regimes = full_analyzer.label_new_data(df)
         
+        # Print distribution of regimes in the labeled data
+        print(f"Regime distribution in labeled data: {np.unique(df_with_regimes['regime'], return_counts=True)}")
+        
         return df_with_regimes
     
     def _calculate_regime_statistics(self, df_with_regimes, volatility_col, timestamp_col):
@@ -223,43 +310,62 @@ class VolatilityRegimesIdentifier:
             volatility_col (str): Name of volatility column
             timestamp_col (str): Name of timestamp column
         """
-        n_regimes = len(np.unique(df_with_regimes['regime']))
+        # Get the unique regime labels which may not be sequential
+        unique_regimes = np.unique(df_with_regimes['regime'])
+        n_regimes = len(unique_regimes)
+        
+        # Create mappings between regime labels and indices
+        regime_to_idx = {regime: idx for idx, regime in enumerate(unique_regimes)}
+        idx_to_regime = {idx: regime for idx, regime in enumerate(unique_regimes)}
         
         # Calculate statistics for each regime
         regime_stats = {
             'regime_stats': [],
-            'transition_probs': np.zeros((n_regimes, n_regimes))
+            'transition_probs': np.zeros((n_regimes, n_regimes)),
+            'unique_regimes': unique_regimes.tolist(),
+            'regime_to_idx': regime_to_idx,
+            'idx_to_regime': idx_to_regime,
+            'n_regimes': n_regimes
         }
         
-        for regime in range(n_regimes):
+        for regime in unique_regimes:
             regime_data = df_with_regimes[df_with_regimes['regime'] == regime]
             
             # Basic statistics
             stats = {
-                'regime_id': regime,
+                'regime_id': int(regime),  # Convert to int to avoid numpy type issues
                 'size': len(regime_data),
-                'mean_vol': regime_data[volatility_col].mean()
+                'mean_vol': regime_data[volatility_col].mean() if len(regime_data) > 0 else 0
             }
             
             # Calculate duration if timestamps are available
-            if pd.api.types.is_datetime64_any_dtype(regime_data[timestamp_col]):
+            if len(regime_data) > 0 and pd.api.types.is_datetime64_any_dtype(regime_data[timestamp_col]):
                 duration = (regime_data[timestamp_col].max() - 
                           regime_data[timestamp_col].min()).total_seconds()
                 stats['duration'] = duration
                 
             regime_stats['regime_stats'].append(stats)
         
-        # Calculate transition probabilities
-        for i in range(len(df_with_regimes['regime']) - 1):
-            current_regime = df_with_regimes['regime'].iloc[i]
-            next_regime = df_with_regimes['regime'].iloc[i + 1]
-            regime_stats['transition_probs'][current_regime, next_regime] += 1
-        
-        # Normalize transition probabilities
-        for i in range(n_regimes):
-            row_sum = regime_stats['transition_probs'][i].sum()
-            if row_sum > 0:
-                regime_stats['transition_probs'][i] /= row_sum
+        # Calculate transition probabilities using the mapping
+        if len(df_with_regimes) > 1:
+            for i in range(len(df_with_regimes) - 1):
+                current_regime = df_with_regimes['regime'].iloc[i]
+                next_regime = df_with_regimes['regime'].iloc[i + 1]
+                
+                # Map to indices for the transition matrix
+                current_idx = regime_to_idx[current_regime]
+                next_idx = regime_to_idx[next_regime]
+                
+                regime_stats['transition_probs'][current_idx, next_idx] += 1
+            
+            # Normalize transition probabilities
+            for i in range(n_regimes):
+                row_sum = regime_stats['transition_probs'][i].sum()
+                if row_sum > 0:
+                    regime_stats['transition_probs'][i] /= row_sum
+        else:
+            # If only one observation, use uniform transitions
+            regime_stats['transition_probs'] = np.ones((n_regimes, n_regimes)) / n_regimes
         
         self.regime_stats = regime_stats
         

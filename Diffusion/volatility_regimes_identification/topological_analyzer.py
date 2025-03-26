@@ -4,7 +4,7 @@ import os
 import time
 from datetime import datetime
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.cluster import SpectralClustering
 import warnings
 import networkx as nx
@@ -682,15 +682,14 @@ class TopologicalDataAnalyzer:
     
     def identify_regimes(self, n_regimes=3, affinity_sigma=1.0):
         """
-        Identify volatility regimes using directed spectral clustering, 
-        incorporating path zigzag persistence information when available.
+        Identify volatility regimes using enhanced spectral clustering with adaptive affinity.
         
         Parameters:
         -----------
         n_regimes : int
             Number of regimes to identify
         affinity_sigma : float
-            Bandwidth parameter for affinity calculation
+            Initial bandwidth parameter for affinity calculation
             
         Returns:
         --------
@@ -703,184 +702,181 @@ class TopologicalDataAnalyzer:
         if self.temporal_distance_matrix is None:
             raise ValueError("Temporal distance matrix must be computed first")
         
-        # Normalize features to improve clustering
-        normalized_features = StandardScaler().fit_transform(self.features)
+        # Normalize features with robust scaling
+        normalized_features = RobustScaler().fit_transform(self.features)
         
-        # Create affinity matrix from distance matrix
-        affinity = np.zeros_like(self.temporal_distance_matrix)
+        # Initialize affinity matrix with adaptive bandwidth
+        n_samples = self.n_samples
+        affinity = np.zeros((n_samples, n_samples))
         
-        # Check if we have path zigzag persistence data
-        has_zigzag_data = hasattr(self, 'path_zigzag_diagrams') and self.path_zigzag_diagrams is not None
+        # Compute adaptive bandwidth for each point
+        distances = squareform(pdist(normalized_features))
+        k = min(15, n_samples - 1)  # k-nearest neighbors
+        sorted_distances = np.sort(distances, axis=1)
+        local_scales = sorted_distances[:, k].reshape(-1, 1)
         
-        # Initialize temporal coherence matrix - encourages temporal consistency in regimes
-        temporal_coherence = np.zeros_like(self.temporal_distance_matrix)
-        half_window = 5  # Consider points within this window as temporally related
+        # Enhanced temporal coherence with adaptive window
+        temporal_coherence = np.zeros((n_samples, n_samples))
+        adaptive_window = max(5, int(n_samples * 0.02))  # Adaptive window size
         
-        # Build temporal coherence - higher affinity for nearby points in time
-        for i in range(self.n_samples):
-            lower_bound = max(0, i - half_window)
-            upper_bound = min(self.n_samples, i + half_window + 1)
+        for i in range(n_samples):
+            lower_bound = max(0, i - adaptive_window)
+            upper_bound = min(n_samples, i + adaptive_window + 1)
             for j in range(lower_bound, upper_bound):
                 if i != j:
-                    # Stronger coherence for closer points in time
-                    temporal_coherence[i, j] = 1.0 - abs(i - j) / (2 * half_window)
+                    # Exponential decay for temporal coherence
+                    temporal_weight = np.exp(-abs(i - j) / adaptive_window)
+                    temporal_coherence[i, j] = temporal_weight
         
-        if has_zigzag_data:
-            print("Using path zigzag persistence information for regime identification...")
-            
-            # Get window indices from zigzag computation
-            window_indices = self.path_zigzag_diagrams['window_indices']
-            
-            # Get transition information
-            transitions = self.path_zigzag_diagrams['betti_numbers']['transitions']
-            
-            # Create a transition strength matrix based on zigzag persistence
-            transition_strength = np.zeros((self.n_samples, self.n_samples))
-            
-            # Fill transition strength matrix based on persistent paths
-            for transition in transitions:
-                window_pair = transition['window_pair']
-                persistent_paths = transition['persistent_paths']
-                dimension = transition['dimension']
+        # Incorporate zigzag persistence if available
+        has_zigzag = hasattr(self, 'path_zigzag_diagrams') and self.path_zigzag_diagrams is not None
+        if has_zigzag:
+            print("Incorporating path zigzag persistence information...")
+            transition_strength = self._compute_zigzag_transition_strength()
+        
+        # Compute affinity matrix with adaptive scaling
+        for i in range(n_samples):
+            for j in range(i + 1, n_samples):
+                # Compute feature similarity with adaptive bandwidth
+                feature_dist = np.sqrt(np.sum((normalized_features[i] - normalized_features[j]) ** 2))
+                bandwidth = np.mean([local_scales[i], local_scales[j]])
+                base_affinity = np.exp(-feature_dist**2 / (2 * bandwidth**2))
                 
-                # More weight to higher-dimensional persistent paths
-                strength = persistent_paths * (dimension + 1)  # Increase influence
+                # Enhanced temporal weighting
+                temporal_effect = 1.0 + temporal_coherence[i, j]
                 
-                # Get indices for the overlapping part of consecutive windows
-                current_window = window_indices[window_pair[0]]
-                next_window = window_indices[window_pair[1]]
-                overlap_indices = set(current_window).intersection(set(next_window))
+                # Incorporate zigzag information if available
+                if has_zigzag and transition_strength is not None:
+                    zigzag_boost = 1.0 + transition_strength[i, j] * 2.0
+                    affinity[i, j] = base_affinity * temporal_effect * zigzag_boost
+                else:
+                    affinity[i, j] = base_affinity * temporal_effect
                 
-                # Set transition strength for points in the overlap
-                for i in overlap_indices:
-                    for j in overlap_indices:
-                        if i < j:  # Respect temporal ordering
-                            transition_strength[i, j] += strength
-            
-            # Normalize transition strength
-            if np.max(transition_strength) > 0:
-                transition_strength = transition_strength / np.max(transition_strength)
-            
-            # Incorporate transition strength into affinity calculation
-            for i in range(self.n_samples):
-                for j in range(self.n_samples):
-                    if i != j:
-                        # Calculate feature distance using normalized features
-                        feature_dist = np.sqrt(np.sum((normalized_features[i] - normalized_features[j]) ** 2))
-                        
-                        # Calculate modified affinity with zigzag information
-                        base_affinity = np.exp(-feature_dist**2 / (2 * affinity_sigma**2))
-                        temporal_effect = 1.0 + temporal_coherence[i, j]
-                        
-                        # Boost affinity for strong persistent path transitions
-                        zigzag_boost = 1.0 + transition_strength[i, j] * 2.0
-                        
-                        # Calculate final affinity
-                        affinity[i, j] = base_affinity * zigzag_boost * temporal_effect
-                        
-                        # Penalize large temporal gaps (non-consecutive regimes)
-                        if abs(i - j) > half_window * 3:
-                            affinity[i, j] *= 0.5
-                            
-        else:
-            # Standard affinity computation (no zigzag information)
-            for i in range(self.n_samples):
-                for j in range(self.n_samples):
-                    if i != j:
-                        # Calculate feature distance using normalized features
-                        feature_dist = np.sqrt(np.sum((normalized_features[i] - normalized_features[j]) ** 2))
-                        
-                        # Calculate modified affinity with temporal weighting
-                        base_affinity = np.exp(-feature_dist**2 / (2 * affinity_sigma**2))
-                        temporal_effect = 1.0 + temporal_coherence[i, j]
-                        
-                        # Calculate final affinity
-                        affinity[i, j] = base_affinity * temporal_effect
-                        
-                        # Penalize large temporal gaps (non-consecutive regimes)
-                        if abs(i - j) > half_window * 3:
-                            affinity[i, j] *= 0.5
+                affinity[j, i] = affinity[i, j]  # Symmetric matrix
         
-        # Make sure affinity matrix is valid for spectral clustering
-        np.fill_diagonal(affinity, 0)  # Zero diagonal
+        # Normalize affinity matrix
+        affinity = affinity / np.max(affinity)
+        np.fill_diagonal(affinity, 0)
         
-        # Print some stats about the affinity matrix
-        print(f"Affinity matrix shape: {affinity.shape}, min: {np.min(affinity)}, max: {np.max(affinity)}")
+        print(f"Affinity matrix shape: {affinity.shape}, range: [{np.min(affinity):.4f}, {np.max(affinity):.4f}]")
         
-        # Perform spectral clustering with additional parameters for robustness
+        # Enhanced spectral clustering with balanced initialization
         from sklearn.cluster import SpectralClustering
+        from sklearn.mixture import GaussianMixture
         
-        # Try with different algorithms for stability
+        # First attempt with balanced spectral clustering
         try:
-            # First attempt with 'amg' solver which is faster and more accurate
             clustering = SpectralClustering(
                 n_clusters=n_regimes,
                 affinity='precomputed',
                 random_state=42,
                 assign_labels='kmeans',
-                eigen_solver='amg'  # Algebraic multigrid solver
+                n_init=20  # Multiple initializations for stability
             )
             regime_labels = clustering.fit_predict(affinity)
-        except:
-            # Fall back to default solver if amg fails
-            print("AMG solver failed, using default solver...")
-            clustering = SpectralClustering(
-                n_clusters=n_regimes,
-                affinity='precomputed',
-                random_state=42,
-                assign_labels='kmeans'
-            )
-            regime_labels = clustering.fit_predict(affinity)
+            
+            # Check regime balance
+            regime_counts = np.bincount(regime_labels)
+            balance_ratio = np.min(regime_counts) / np.max(regime_counts)
+            
+            # If imbalanced, try alternative clustering
+            if balance_ratio < 0.15:  # Severe imbalance threshold
+                print("Initial clustering imbalanced, attempting refinement...")
+                
+                # Use spectral embedding with GMM
+                from sklearn.manifold import SpectralEmbedding
+                
+                embedder = SpectralEmbedding(
+                    n_components=min(n_regimes * 2, n_samples - 1),
+                    affinity='precomputed',
+                    random_state=42
+                )
+                embedding = embedder.fit_transform(affinity)
+                
+                # Fit GMM with balanced initialization
+                gmm = GaussianMixture(
+                    n_components=n_regimes,
+                    covariance_type='full',
+                    n_init=20,
+                    random_state=42
+                )
+                regime_labels = gmm.fit_predict(embedding)
+                
+                # Check if GMM improved balance
+                new_counts = np.bincount(regime_labels)
+                new_balance = np.min(new_counts) / np.max(new_counts)
+                
+                if new_balance > balance_ratio:
+                    print(f"Refined regime distribution: {new_counts}")
+                else:
+                    # Revert to original labels if no improvement
+                    regime_labels = clustering.labels_
         
-        # Check if regime distribution is reasonable
-        regime_counts = np.bincount(regime_labels)
-        min_regime_size = np.min(regime_counts)
-        total_points = len(regime_labels)
+        except Exception as e:
+            print(f"Error in spectral clustering: {str(e)}")
+            # Fallback to basic clustering
+            from sklearn.cluster import KMeans
+            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=20)
+            regime_labels = kmeans.fit_predict(normalized_features)
         
-        print(f"Initial regime distribution: {regime_counts}")
-        
-        # If any regime is too small, try to re-cluster
-        if min_regime_size < total_points * 0.05 and total_points > 20:
-            print(f"Regime imbalance detected, smallest regime has only {min_regime_size} points. Trying again with adjusted parameters...")
-            
-            # Adjust affinity to promote more balanced clusters
-            for i in range(self.n_samples):
-                for j in range(self.n_samples):
-                    if i != j:
-                        # Add more weight to temporal coherence
-                        affinity[i, j] = affinity[i, j] * (1.0 + temporal_coherence[i, j] * 2.0)
-            
-            # Try again with slightly different parameters
-            clustering = SpectralClustering(
-                n_clusters=n_regimes,
-                affinity='precomputed',
-                random_state=42,
-                n_init=10,  # Try multiple initializations
-                assign_labels='discretize'  # Different label assignment
-            )
-            new_regime_labels = clustering.fit_predict(affinity)
-            
-            # Check if the new labels are better balanced
-            new_regime_counts = np.bincount(new_regime_labels)
-            new_min_regime_size = np.min(new_regime_counts)
-            
-            print(f"New regime distribution: {new_regime_counts}")
-            
-            # Use the new labels if they're better balanced
-            if new_min_regime_size > min_regime_size:
-                regime_labels = new_regime_labels
-        
-        # Store regime labels
+        # Store final regime labels
         self.regime_labels = regime_labels
         
-        # Print regime distribution
-        final_regime_counts = np.bincount(regime_labels)
-        print(f"Final regime distribution: {final_regime_counts}")
-        
-        # Print runtime
+        # Print final distribution
+        final_counts = np.bincount(regime_labels)
+        print(f"Final regime distribution: {final_counts}")
+        print(f"Regime balance ratio: {np.min(final_counts) / np.max(final_counts):.3f}")
         print(f"Regime identification completed in {time.time() - start_time:.2f} seconds")
+        
         return regime_labels
-    
+
+    def _compute_zigzag_transition_strength(self):
+        """
+        Helper method to compute transition strength from zigzag persistence data.
+        
+        Returns:
+        --------
+        numpy.ndarray or None
+            Transition strength matrix if zigzag data is available
+        """
+        try:
+            window_indices = self.path_zigzag_diagrams['window_indices']
+            transitions = self.path_zigzag_diagrams['betti_numbers']['transitions']
+            
+            transition_strength = np.zeros((self.n_samples, self.n_samples))
+            
+            for transition in transitions:
+                window_pair = transition['window_pair']
+                persistent_paths = transition['persistent_paths']
+                dimension = transition['dimension']
+                
+                # Enhanced weighting scheme
+                strength = persistent_paths * (dimension + 1) * np.exp(-dimension)
+                
+                # Get overlapping indices
+                current_window = window_indices[window_pair[0]]
+                next_window = window_indices[window_pair[1]]
+                overlap_indices = list(set(current_window) & set(next_window))
+                
+                # Set transition strength with temporal decay
+                for i in overlap_indices:
+                    for j in overlap_indices:
+                        if i < j:
+                            temporal_dist = (j - i) / len(overlap_indices)
+                            decay = np.exp(-temporal_dist)
+                            transition_strength[i, j] += strength * decay
+                            transition_strength[j, i] = transition_strength[i, j]
+            
+            # Normalize transition strength
+            if np.max(transition_strength) > 0:
+                transition_strength = transition_strength / np.max(transition_strength)
+            
+            return transition_strength
+            
+        except Exception as e:
+            print(f"Warning: Error computing zigzag transition strength: {str(e)}")
+            return None
+
     def analyze_regimes(self):
         """
         Analyze the identified regimes to extract statistics and patterns.

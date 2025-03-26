@@ -27,13 +27,62 @@ class VolatilityRegimesIdentifier:
         self.pattern_classifier = None
         self.window_sizes = None  # Store window sizes
         self.output_dir = None  # Store output directory
+        self.min_sequence_length = None
+        self.smoothing_method = None
+        self.smooth_sequences = None
         
     def identify_regimes(self, df, timestamp_col, price_col, volume_col, volatility_col, 
                         n_regimes=4, window_sizes=None, top_features=10, alpha=0.5, beta=0.1,
                         window_size=100, overlap=50, max_path_length=3, min_epsilon=0.1, max_epsilon=2.0,
-                        sample_size=10000, sampling_method='sequential', output_dir=None):
+                        sample_size=10000, sampling_method='sequential', output_dir=None,
+                        smooth_sequences=True, min_sequence_length=20, smoothing_method='persistence_based'):
         """
         Identify volatility regimes using a two-stage approach with path complex and zigzag persistence.
+        
+        Parameters:
+        -----------
+        df : pandas.DataFrame
+            Input dataframe with tick data
+        timestamp_col : str
+            Column name for timestamps
+        price_col : str
+            Column name for price values
+        volume_col : str
+            Column name for volume values
+        volatility_col : str
+            Column name for volatility values
+        n_regimes : int
+            Number of regimes to detect
+        window_sizes : list
+            List of window sizes for feature calculation
+        top_features : int
+            Number of top features to include
+        alpha : float
+            Weight for temporal component
+        beta : float
+            Decay rate for temporal distance
+        window_size : int
+            Size of sliding window for zigzag persistence
+        overlap : int
+            Number of points to overlap between windows
+        max_path_length : int
+            Maximum length of paths to consider
+        min_epsilon : float
+            Minimum distance threshold
+        max_epsilon : float
+            Maximum distance threshold
+        sample_size : int
+            Number of points to sample for pattern learning
+        sampling_method : str
+            Method to use for sampling ('sequential' or 'chunks')
+        output_dir : str
+            Directory to save outputs
+        smooth_sequences : bool
+            Whether to smooth regime sequences
+        min_sequence_length : int
+            Minimum length for a sequence to be preserved in ticks
+        smoothing_method : str
+            Method to use for smoothing ('persistence_based', 'transition_prob', or 'confidence_weighted')
         """
         total_start_time = time.time()
         print("\nStarting volatility regime detection at", datetime.now().strftime("%H:%M:%S"))
@@ -49,6 +98,9 @@ class VolatilityRegimesIdentifier:
         # Store parameters
         self.sample_size = min(sample_size, len(df))
         self.window_sizes = window_sizes if window_sizes is not None else [10, 30, 50]
+        self.min_sequence_length = min_sequence_length
+        self.smoothing_method = smoothing_method
+        self.smooth_sequences = smooth_sequences
         
         # Stage 1: Sample and Learn Patterns
         print("\n=== Stage 1: Learning Patterns from Sample ===")
@@ -296,10 +348,52 @@ class VolatilityRegimesIdentifier:
         # Use the learned patterns to label the full dataset
         df_with_regimes = full_analyzer.label_new_data(df)
         
+        # Apply sequence smoothing to eliminate short sequences if requested
+        if hasattr(self, 'smooth_sequences') and self.smooth_sequences:
+            print(f"\n--- STEP 4: Smoothing Short Regime Sequences ---")
+            smoothing_start = time.time()
+            
+            min_length = self.min_sequence_length if hasattr(self, 'min_sequence_length') else 20
+            method = self.smoothing_method if hasattr(self, 'smoothing_method') else 'persistence_based'
+            
+            df_with_regimes = full_analyzer.smooth_regime_sequences(
+                df_with_regimes,
+                min_sequence_length=min_length,
+                method=method
+            )
+            
+            print(f"Sequence smoothing completed in {time.time() - smoothing_start:.2f} seconds")
+        
         # Print distribution of regimes in the labeled data
         print(f"Regime distribution in labeled data: {np.unique(df_with_regimes['regime'], return_counts=True)}")
         
         return df_with_regimes
+    
+    def smooth_regime_sequences(self, df, min_sequence_length=20, method='persistence_based'):
+        """
+        Smooth regime sequences in an already labeled dataset.
+        
+        Parameters:
+        -----------
+        df : pandas.DataFrame
+            DataFrame with regime labels to smooth
+        min_sequence_length : int
+            Minimum length for a sequence to be preserved
+        method : str
+            Method to use for smoothing:
+            - 'persistence_based': Use TDA persistence concepts for merging
+            - 'transition_prob': Use regime transition probabilities
+            - 'confidence_weighted': Use regime confidence scores
+            
+        Returns:
+        --------
+        pandas.DataFrame
+            DataFrame with smoothed regime labels
+        """
+        if self.analyzer is None:
+            raise ValueError("You must identify regimes first")
+            
+        return self.analyzer.smooth_regime_sequences(df, min_sequence_length, method)
     
     def _calculate_regime_statistics(self, df_with_regimes, volatility_col, timestamp_col):
         """

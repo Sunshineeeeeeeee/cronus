@@ -456,6 +456,334 @@ class VolatilityRegimeAnalyzer:
             
         return result_df
     
+    def smooth_regime_sequences(self, df, min_sequence_length=20, method='persistence_based', confidence_weight=0.5):
+        """
+        Smooth regime sequences by merging short sequences into adjacent longer ones,
+        leveraging TDA persistence concepts.
+        
+        Parameters:
+        -----------
+        df : pandas.DataFrame
+            DataFrame with regime labels to smooth
+        min_sequence_length : int
+            Minimum length for a sequence to be preserved
+        method : str
+            Method to use for smoothing:
+            - 'persistence_based': Use TDA persistence concepts for merging
+            - 'transition_prob': Use regime transition probabilities
+            - 'confidence_weighted': Use regime confidence scores
+        confidence_weight : float
+            Weight for confidence scores (0-1) when using 'confidence_weighted' method
+            
+        Returns:
+        --------
+        pandas.DataFrame
+            DataFrame with smoothed regime labels
+        """
+        if 'regime' not in df.columns:
+            raise ValueError("DataFrame must contain 'regime' column")
+            
+        print(f"Smoothing regime sequences (min length: {min_sequence_length})...")
+        result_df = df.copy()
+        
+        # Track if changes were made in the current iteration
+        changes_made = True
+        iteration = 0
+        max_iterations = 10  # Set a maximum to prevent infinite loops
+        
+        while changes_made and iteration < max_iterations:
+            iteration += 1
+            changes_made = False
+            
+            # Get regime labels
+            original_labels = result_df['regime'].values
+            n_points = len(original_labels)
+            
+            # Identify sequences
+            sequences = []
+            current_regime = original_labels[0]
+            seq_start = 0
+            
+            # Extract all sequences with their start/end indices
+            for i in range(1, n_points):
+                if original_labels[i] != current_regime:
+                    sequences.append({
+                        'regime': current_regime,
+                        'start': seq_start,
+                        'end': i - 1,
+                        'length': i - seq_start
+                    })
+                    seq_start = i
+                    current_regime = original_labels[i]
+                    
+            # Add the last sequence
+            sequences.append({
+                'regime': current_regime,
+                'start': seq_start,
+                'end': n_points - 1,
+                'length': n_points - seq_start
+            })
+            
+            # Only print statistics on first iteration
+            if iteration == 1:
+                # Print original sequence statistics
+                unique_regimes = np.unique([seq['regime'] for seq in sequences])
+                print("\n=== Original Regime Sequence Statistics ===")
+                for regime in unique_regimes:
+                    regime_seqs = [seq for seq in sequences if seq['regime'] == regime]
+                    lengths = [seq['length'] for seq in regime_seqs]
+                    
+                    if lengths:
+                        print(f"\nRegime {regime}:")
+                        print(f"  Min sequence length: {min(lengths)}")
+                        print(f"  Max sequence length: {max(lengths)}")
+                        print(f"  Mean sequence length: {np.mean(lengths):.2f}")
+                        print(f"  Number of sequences: {len(regime_seqs)}")
+            
+            # Identify short sequences that need merging
+            short_sequences = [seq for seq in sequences if seq['length'] < min_sequence_length]
+            if not short_sequences:
+                print(f"No short sequences found that need merging (iteration {iteration}).")
+                break
+                
+            print(f"Iteration {iteration}: Found {len(short_sequences)} short sequences to merge")
+            
+            # Define smoothed_labels array to hold the final result
+            smoothed_labels = original_labels.copy()
+            
+            # Apply different smoothing methods
+            if method == 'persistence_based':
+                # Sort short sequences by length (shortest first)
+                short_sequences.sort(key=lambda x: x['length'])
+                
+                for seq in short_sequences:
+                    # Skip if this sequence was already merged
+                    if smoothed_labels[seq['start']] != seq['regime']:
+                        continue
+                        
+                    # Get adjacent sequences
+                    left_neighbor = None
+                    right_neighbor = None
+                    
+                    for potential_neighbor in sequences:
+                        if potential_neighbor['end'] == seq['start'] - 1:
+                            left_neighbor = potential_neighbor
+                        if potential_neighbor['start'] == seq['end'] + 1:
+                            right_neighbor = potential_neighbor
+                    
+                    # Choose which neighbor to merge with based on length (persistence)
+                    left_length = left_neighbor['length'] if left_neighbor else 0
+                    right_length = right_neighbor['length'] if right_neighbor else 0
+                    
+                    # If we have both neighbors, choose the longer one (more "persistent")
+                    if left_neighbor and right_neighbor:
+                        if left_length >= right_length:
+                            # Merge with left neighbor
+                            if smoothed_labels[seq['start']] != left_neighbor['regime']:
+                                smoothed_labels[seq['start']:seq['end']+1] = left_neighbor['regime']
+                                changes_made = True
+                        else:
+                            # Merge with right neighbor
+                            if smoothed_labels[seq['start']] != right_neighbor['regime']:
+                                smoothed_labels[seq['start']:seq['end']+1] = right_neighbor['regime']
+                                changes_made = True
+                    elif left_neighbor:
+                        # Only have left neighbor
+                        if smoothed_labels[seq['start']] != left_neighbor['regime']:
+                            smoothed_labels[seq['start']:seq['end']+1] = left_neighbor['regime']
+                            changes_made = True
+                    elif right_neighbor:
+                        # Only have right neighbor
+                        if smoothed_labels[seq['start']] != right_neighbor['regime']:
+                            smoothed_labels[seq['start']:seq['end']+1] = right_neighbor['regime']
+                            changes_made = True
+                    # If no neighbors, keep as is
+                    
+            elif method == 'transition_prob':
+                # Use transition probabilities from regime analysis if available
+                transition_probs = None
+                regime_to_idx = None
+                idx_to_regime = None
+                
+                if hasattr(self, 'regime_analysis') and self.regime_analysis:
+                    if 'transition_probs' in self.regime_analysis:
+                        transition_probs = self.regime_analysis['transition_probs']
+                        regime_to_idx = self.regime_analysis.get('regime_to_idx', {})
+                        idx_to_regime = self.regime_analysis.get('idx_to_regime', {})
+                
+                # Fall back to basic approach if no transition data
+                if transition_probs is None:
+                    print("No transition probability data available, falling back to persistence-based method")
+                    # Call this method recursively with 'persistence_based'
+                    return self.smooth_regime_sequences(df, min_sequence_length, 'persistence_based', confidence_weight)
+                
+                # Process short sequences
+                for seq in short_sequences:
+                    # Skip if this sequence was already merged
+                    if smoothed_labels[seq['start']] != seq['regime']:
+                        continue
+                    
+                    # Get adjacent sequences
+                    left_neighbor = None
+                    right_neighbor = None
+                    
+                    for potential_neighbor in sequences:
+                        if potential_neighbor['end'] == seq['start'] - 1:
+                            left_neighbor = potential_neighbor
+                        if potential_neighbor['start'] == seq['end'] + 1:
+                            right_neighbor = potential_neighbor
+                    
+                    # Calculate transition probabilities
+                    current_regime_idx = regime_to_idx.get(seq['regime'], 0)
+                    left_prob = 0
+                    right_prob = 0
+                    
+                    if left_neighbor:
+                        left_regime_idx = regime_to_idx.get(left_neighbor['regime'], 0)
+                        # Transition from left to current
+                        left_prob = transition_probs[left_regime_idx, current_regime_idx]
+                        
+                    if right_neighbor:
+                        right_regime_idx = regime_to_idx.get(right_neighbor['regime'], 0)
+                        # Transition from current to right
+                        right_prob = transition_probs[current_regime_idx, right_regime_idx]
+                    
+                    # Choose direction based on transition probability
+                    if left_neighbor and right_neighbor:
+                        if left_prob >= right_prob:
+                            # Merge with left neighbor
+                            if smoothed_labels[seq['start']] != left_neighbor['regime']:
+                                smoothed_labels[seq['start']:seq['end']+1] = left_neighbor['regime']
+                                changes_made = True
+                        else:
+                            # Merge with right neighbor
+                            if smoothed_labels[seq['start']] != right_neighbor['regime']:
+                                smoothed_labels[seq['start']:seq['end']+1] = right_neighbor['regime']
+                                changes_made = True
+                    elif left_neighbor:
+                        # Only have left neighbor
+                        if smoothed_labels[seq['start']] != left_neighbor['regime']:
+                            smoothed_labels[seq['start']:seq['end']+1] = left_neighbor['regime']
+                            changes_made = True
+                    elif right_neighbor:
+                        # Only have right neighbor
+                        if smoothed_labels[seq['start']] != right_neighbor['regime']:
+                            smoothed_labels[seq['start']:seq['end']+1] = right_neighbor['regime']
+                            changes_made = True
+                        
+            elif method == 'confidence_weighted':
+                # Use confidence scores if available
+                if 'regime_confidence' not in df.columns:
+                    print("No confidence scores available, falling back to persistence-based method")
+                    # Call this method recursively with 'persistence_based'
+                    return self.smooth_regime_sequences(df, min_sequence_length, 'persistence_based', confidence_weight)
+                
+                # Process short sequences
+                for seq in short_sequences:
+                    # Skip if this sequence was already merged
+                    if smoothed_labels[seq['start']] != seq['regime']:
+                        continue
+                    
+                    # Get adjacent sequences
+                    left_neighbor = None
+                    right_neighbor = None
+                    
+                    for potential_neighbor in sequences:
+                        if potential_neighbor['end'] == seq['start'] - 1:
+                            left_neighbor = potential_neighbor
+                        if potential_neighbor['start'] == seq['end'] + 1:
+                            right_neighbor = potential_neighbor
+                    
+                    # Calculate weighted decision based on sequence length and confidence
+                    seq_confidence = df.iloc[seq['start']:seq['end']+1]['regime_confidence'].mean()
+                    left_weight = 0
+                    right_weight = 0
+                    
+                    if left_neighbor:
+                        left_confidence = df.iloc[left_neighbor['start']:left_neighbor['end']+1]['regime_confidence'].mean()
+                        left_weight = left_neighbor['length'] * (1 + confidence_weight * left_confidence)
+                        
+                    if right_neighbor:
+                        right_confidence = df.iloc[right_neighbor['start']:right_neighbor['end']+1]['regime_confidence'].mean()
+                        right_weight = right_neighbor['length'] * (1 + confidence_weight * right_confidence)
+                    
+                    # Choose direction based on weighted score
+                    if left_neighbor and right_neighbor:
+                        if left_weight >= right_weight:
+                            # Merge with left neighbor
+                            if smoothed_labels[seq['start']] != left_neighbor['regime']:
+                                smoothed_labels[seq['start']:seq['end']+1] = left_neighbor['regime']
+                                changes_made = True
+                        else:
+                            # Merge with right neighbor
+                            if smoothed_labels[seq['start']] != right_neighbor['regime']:
+                                smoothed_labels[seq['start']:seq['end']+1] = right_neighbor['regime']
+                                changes_made = True
+                    elif left_neighbor:
+                        # Only have left neighbor
+                        if smoothed_labels[seq['start']] != left_neighbor['regime']:
+                            smoothed_labels[seq['start']:seq['end']+1] = left_neighbor['regime']
+                            changes_made = True
+                    elif right_neighbor:
+                        # Only have right neighbor
+                        if smoothed_labels[seq['start']] != right_neighbor['regime']:
+                            smoothed_labels[seq['start']:seq['end']+1] = right_neighbor['regime']
+                            changes_made = True
+            
+            # Apply smoothed labels to the DataFrame
+            result_df['regime'] = smoothed_labels
+            
+        # Calculate final sequence statistics
+        original_labels = result_df['regime'].values
+        n_points = len(original_labels)
+        
+        # Identify sequences for final statistics
+        new_sequences = []
+        current_regime = original_labels[0]
+        seq_start = 0
+        
+        # Extract all sequences with their start/end indices
+        for i in range(1, n_points):
+            if original_labels[i] != current_regime:
+                new_sequences.append({
+                    'regime': current_regime,
+                    'start': seq_start,
+                    'end': i - 1,
+                    'length': i - seq_start
+                })
+                seq_start = i
+                current_regime = original_labels[i]
+                
+        # Add the last sequence
+        new_sequences.append({
+            'regime': current_regime,
+            'start': seq_start,
+            'end': n_points - 1,
+            'length': n_points - seq_start
+        })
+        
+        # Print new sequence statistics
+        unique_regimes = np.unique([seq['regime'] for seq in new_sequences])
+        print(f"\n=== Smoothed Regime Sequence Statistics (after {iteration} iterations) ===")
+        for regime in unique_regimes:
+            regime_seqs = [seq for seq in new_sequences if seq['regime'] == regime]
+            lengths = [seq['length'] for seq in regime_seqs]
+            
+            if lengths:
+                print(f"\nRegime {regime}:")
+                print(f"  Min sequence length: {min(lengths)}")
+                print(f"  Max sequence length: {max(lengths)}")
+                print(f"  Mean sequence length: {np.mean(lengths):.2f}")
+                print(f"  Number of sequences: {len(regime_seqs)}")
+        
+        # Check if there are still short sequences
+        short_seqs = [seq for seq in new_sequences if seq['length'] < min_sequence_length]
+        if short_seqs:
+            print(f"\nWarning: {len(short_seqs)} short sequences remain after maximum iterations.")
+            print("These sequences likely have no neighbors to merge with (isolated sequences).")
+                
+        return result_df
+        
     def predict_regime_transitions(self, steps_ahead=10):
         """
         Predict future regime transitions based on transition probabilities.
@@ -694,5 +1022,12 @@ class VolatilityRegimeAnalyzer:
         
         # Use the learned patterns to label the full dataset - use the same window_sizes for new data
         df_with_regimes = full_analyzer.label_new_data(df)
+        
+        # Apply sequence smoothing to eliminate short regime sequences
+        df_with_regimes = full_analyzer.smooth_regime_sequences(
+            df_with_regimes,
+            min_sequence_length=20,  # Minimum length for a valid sequence
+            method='persistence_based'  # Use TDA-based persistence approach
+        )
         
         return df_with_regimes 

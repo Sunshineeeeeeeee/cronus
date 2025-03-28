@@ -152,91 +152,7 @@ class InformationTheoryEnhancer:
         print(f"Shannon entropy estimation completed in {time.time() - start_time:.2f} seconds")
         return self
         
-    def _compute_rff_features(self, X, n_features=50, gamma=1.0):
-        """
-        Compute Random Fourier Features for a given input matrix.
-        
-        Parameters:
-        -----------
-        X : numpy.ndarray
-            Input data matrix of shape (n_samples, n_dimensions)
-        n_features : int
-            Number of random features to generate
-        gamma : float
-            RBF kernel parameter (1/(2*sigma^2))
-            
-        Returns:
-        --------
-        numpy.ndarray
-            RFF transformed data of shape (n_samples, n_features)
-        """
-        n_samples, n_dims = X.shape
-        
-        # Sample random weights from normal distribution
-        # The scale is determined by the kernel bandwidth (gamma)
-        w = np.random.normal(0, np.sqrt(2 * gamma), (n_dims, n_features))
-        
-        # Sample random offsets from uniform distribution
-        b = np.random.uniform(0, 2 * np.pi, n_features)
-        
-        # Compute random features
-        Z = np.sqrt(2.0 / n_features) * np.cos(np.dot(X, w) + b)
-        
-        return Z
 
-    def compute_mutual_information_matrix_fast(self):
-        """
-        Fast computation of mutual information matrix using sklearn's optimized implementations.
-        This is much faster than both KDE and RFF approaches.
-        """
-        start_time = time.time()
-        print("Computing mutual information matrix using optimized implementation...")
-        
-        # Initialize mutual information matrix
-        mi_matrix = np.zeros((self.n_features, self.n_features))
-        
-        # For each feature as a target, compute MI with all other features
-        for i in range(self.n_features):
-            target = self.scaled_data[:, i]
-            
-            # Determine if target is continuous or discrete
-            unique_vals = np.unique(target)
-            if len(unique_vals) < 10 or np.all(np.mod(target, 1) == 0):
-                # Discrete/categorical target
-                mi_values = mutual_info_classif(
-                    self.scaled_data, 
-                    target,
-                    discrete_features=False,
-                    n_neighbors=3,
-                    random_state=42
-                )
-            else:
-                # Continuous target
-                mi_values = mutual_info_regression(
-                    self.scaled_data,
-                    target,
-                    discrete_features=False,
-                    n_neighbors=3,
-                    random_state=42
-                )
-            
-            # Fill the matrix
-            mi_matrix[i, :] = mi_values
-            
-            # Apply tail emphasis if available
-            if hasattr(self, '_adjust_for_heavy_tails'):
-                tail_factor, _ = self._adjust_for_heavy_tails(target.reshape(-1, 1))
-                mi_matrix[i, :] *= tail_factor
-        
-        # Make matrix symmetric
-        mi_matrix = (mi_matrix + mi_matrix.T) / 2
-        
-        # Fill diagonal with entropy values if available
-        if self.entropy is not None:
-            np.fill_diagonal(mi_matrix, self.entropy)
-        
-        print(f"Fast MI computation completed in {time.time() - start_time:.2f} seconds")
-        return mi_matrix
 
     def compute_mutual_information_fft(self, n_bins=64, max_sample_size=100000):
         """
@@ -508,45 +424,119 @@ class InformationTheoryEnhancer:
         numpy.ndarray
             Array of shape (n_features, n_features) containing transfer entropy values
         """
-        print("Computing transfer entropy between variables...")
+        start_time = time.time()
+        print("\n======================================================================")
+        print("COMPUTING TRANSFER ENTROPY: Analyzing causal information flow between variables")
+        print("======================================================================\n")
         
-        # Initialize transfer entropy matrix
-        te_matrix = np.zeros((self.n_features, self.n_features))
-        
-        # Simplified transfer entropy calculation based on conditional mutual information
-        for i in range(self.n_features):
-            target_future = self.scaled_data[lag:, i]
-            target_present = self.scaled_data[:-lag, i]
+        try:
+            # Initialize transfer entropy matrix
+            te_matrix = np.zeros((self.n_features, self.n_features))
             
-            for j in range(self.n_features):
-                if i == j:
+            # Check if we have enough samples for the given lag
+            if lag >= self.n_samples - 5:  # Need at least a few samples after lag
+                print(f"Warning: Lag ({lag}) is too large for number of samples ({self.n_samples}).")
+                lag = max(1, int(self.n_samples / 10))  # Reasonable default
+                print(f"Setting lag to {lag}")
+            
+            # Process all pairs of features
+            for i in range(self.n_features):
+                target_future = self.scaled_data[lag:, i].copy()
+                target_present = self.scaled_data[:-lag, i].copy()
+                
+                # Ensure we have valid data
+                if len(target_future) < 10 or len(target_present) < 10:
+                    print(f"Warning: Not enough samples for feature {i} after applying lag. Skipping.")
                     continue
                     
-                source_present = self.scaled_data[:-lag, j]
+                for j in range(self.n_features):
+                    if i == j:
+                        continue
+                        
+                    source_present = self.scaled_data[:-lag, j].copy()
+                    
+                    # Skip if any NaN values
+                    if np.isnan(target_future).any() or np.isnan(target_present).any() or np.isnan(source_present).any():
+                        print(f"Warning: NaN values detected for pair ({i},{j}). Skipping.")
+                        continue
+                    
+                    # Skip if any array has constant values (would cause binning issues)
+                    if np.std(target_future) < 1e-10 or np.std(target_present) < 1e-10 or np.std(source_present) < 1e-10:
+                        print(f"Warning: Constant values detected for pair ({i},{j}). Skipping.")
+                        continue
+                    
+                    try:
+                        # Calculate entropy terms using binning approach
+                        # Use adaptive number of bins based on sample size
+                        n_samples = len(target_present)
+                        nbins = max(3, min(20, int(np.sqrt(n_samples / 10))))
+                        
+                        # Calculate entropy of target_future given target_present
+                        h_y_given_yp = self._binned_conditional_entropy(target_future, target_present, nbins)
+                        
+                        # Calculate entropy of target_future given target_present and source_present
+                        h_y_given_yp_xp = self._binned_conditional_entropy(
+                            target_future, 
+                            np.column_stack([target_present, source_present]),
+                            nbins
+                        )
+                        
+                        # Transfer entropy is the difference of these conditional entropies
+                        te = h_y_given_yp - h_y_given_yp_xp
+                        te_matrix[j, i] = max(0, te)  # Ensure non-negative
+                    except Exception as e:
+                        print(f"Error calculating transfer entropy for pair ({i},{j}): {str(e)}")
+                        te_matrix[j, i] = 0  # Set to zero on error
+            
+            # Emphasize transfer entropy to/from target variable
+            if self.target_col_idx is not None:
+                target_factor = 1.5  # Give more weight to target-related transfer entropy
+                te_matrix[:, self.target_col_idx] *= target_factor  # Transfer TO target
+                te_matrix[self.target_col_idx, :] *= target_factor  # Transfer FROM target
                 
-                # Calculate entropy terms using binning approach
-                nbins = max(5, min(20, int(np.sqrt(len(target_present) / 5))))
-                
-                # Calculate entropy of target_future given target_present
-                h_y_given_yp = self._binned_conditional_entropy(target_future, target_present, nbins)
-                
-                # Calculate entropy of target_future given target_present and source_present
-                h_y_given_yp_xp = self._binned_conditional_entropy(
-                    target_future, 
-                    np.column_stack([target_present, source_present]),
-                    nbins
-                )
-                
-                # Transfer entropy is the difference of these conditional entropies
-                te = h_y_given_yp - h_y_given_yp_xp
-                te_matrix[j, i] = max(0, te)  # Ensure non-negative
-                
-        # Store as class attribute and return
-        self.transfer_entropy = te_matrix
-        return te_matrix
+            # Store as class attribute and return
+            self.transfer_entropy = te_matrix
+            print(f"\nTransfer entropy computation completed in {time.time() - start_time:.2f} seconds")
+            print(f"Maximum transfer entropy value: {te_matrix.max():.4f}")
+            
+            # Check if we found meaningful transfer entropy
+            if te_matrix.max() < 1e-6:
+                print("Warning: Very low transfer entropy values detected. This might indicate:")
+                print("  - Insufficient or too noisy data")
+                print("  - Lag parameter needs adjustment (current lag={lag})")
+                print("  - Variables may not have causal relationships")
+            
+            print("======================================================================\n")
+            return te_matrix
+            
+        except Exception as e:
+            print(f"Error in transfer entropy computation: {str(e)}")
+            print(f"Creating fallback transfer entropy matrix with zeros")
+            fallback_matrix = np.zeros((self.n_features, self.n_features))
+            self.transfer_entropy = fallback_matrix
+            print("======================================================================\n")
+            return fallback_matrix
         
     def _binned_conditional_entropy(self, y, x, bins):
-        """Helper method to calculate conditional entropy using binning."""
+        """Helper method to calculate conditional entropy using binning.
+        
+        Parameters:
+        -----------
+        y : numpy.ndarray
+            Target variable (1D array)
+        x : numpy.ndarray
+            Condition variable (1D or 2D array)
+        bins : int
+            Number of bins to use
+            
+        Returns:
+        --------
+        float
+            Conditional entropy H(Y|X)
+        """
+        if y.ndim > 1:
+            y = y.flatten()
+        
         if x.ndim == 1:
             x = x.reshape(-1, 1)
             
@@ -554,54 +544,69 @@ class InformationTheoryEnhancer:
         y_bins = np.linspace(y.min(), y.max(), bins+1)
         y_digitized = np.digitize(y, y_bins) - 1
         
-        if x.shape[1] == 1:
-            x_bins = np.linspace(x.min(), x.max(), bins+1)
-            x_digitized = np.digitize(x, x_bins) - 1
-        else:
-            # If x is multidimensional, bin each dimension separately
-            x_digitized = np.zeros((x.shape[0], x.shape[1]), dtype=int)
-            for j in range(x.shape[1]):
-                x_bins = np.linspace(x[:, j].min(), x[:, j].max(), bins+1)
-                x_digitized[:, j] = np.digitize(x[:, j], x_bins) - 1
-                
-        # Calculate joint and conditional counts
+        # Handle multi-dimensional x
+        n_dim_x = x.shape[1]
+        x_digitized = np.zeros((x.shape[0], n_dim_x), dtype=int)
+        
+        for j in range(n_dim_x):
+            x_bins = np.linspace(x[:, j].min(), x[:, j].max(), bins+1)
+            x_digitized[:, j] = np.digitize(x[:, j], x_bins) - 1
+        
+        # Calculate conditional entropy based on dimensionality of x
         conditional_entropy = 0
         
-        # Handle different dimensions
-        if x.shape[1] == 1:
+        if n_dim_x == 1:
+            # For 1D condition, use simple binning approach
             for i in range(bins):
-                x_mask = x_digitized == i
+                # Create boolean mask for condition x=i
+                x_mask = (x_digitized[:, 0] == i)
                 p_x = np.mean(x_mask)
                 
                 if p_x > 0:
-                    # Calculate entropy of y given x=i
+                    # Get y values where x=i
                     y_given_x = y_digitized[x_mask]
                     
                     if len(y_given_x) > 0:
+                        # Count occurrences of each y bin
                         y_counts = np.bincount(y_given_x, minlength=bins)
+                        # Calculate probabilities
                         y_probs = y_counts / np.sum(y_counts)
+                        # Only use non-zero probabilities for entropy
+                        valid_probs = y_probs[y_probs > 0]
                         
-                        # Calculate entropy
-                        entropy_y_given_x = -np.sum(y_probs * np.log(y_probs + 1e-10))
+                        # Calculate entropy for this condition
+                        entropy_y_given_x = -np.sum(valid_probs * np.log(valid_probs))
                         conditional_entropy += p_x * entropy_y_given_x
         else:
-            # For multidimensional x, we'll use a simplified approach with unique combinations
-            x_combinations = np.array([x_digitized[:, j] * (bins**(j)) for j in range(x.shape[1])]).T
-            x_flat = np.sum(x_combinations, axis=1)
+            # For multidimensional x, use combined bin index approach
+            # Create a unique integer code for each combination of x bins
+            max_bin = bins
+            x_combined = np.zeros(x.shape[0], dtype=int)
             
-            unique_x = np.unique(x_flat)
-            for x_val in unique_x:
-                x_mask = x_flat == x_val
-                p_x = np.mean(x_mask)
+            for j in range(n_dim_x):
+                x_combined += x_digitized[:, j] * (max_bin ** j)
+            
+            # Get unique combinations and their probabilities
+            unique_x_combs, counts = np.unique(x_combined, return_counts=True)
+            probs_x = counts / len(x_combined)
+            
+            # Calculate entropy for each unique combination
+            for idx, x_comb in enumerate(unique_x_combs):
+                x_mask = (x_combined == x_comb)
+                p_x = probs_x[idx]
                 
-                if p_x > 0:
-                    y_given_x = y_digitized[x_mask]
+                # Get y values for this combination
+                y_given_x = y_digitized[x_mask]
+                
+                if len(y_given_x) > 0:
+                    # Calculate entropy
+                    y_counts = np.bincount(y_given_x, minlength=bins)
+                    y_probs = y_counts / np.sum(y_counts)
+                    # Only use non-zero probabilities for entropy
+                    valid_probs = y_probs[y_probs > 0]
                     
-                    if len(y_given_x) > 0:
-                        y_counts = np.bincount(y_given_x, minlength=bins)
-                        y_probs = y_counts / np.sum(y_counts)
-                        
-                        entropy_y_given_x = -np.sum(y_probs * np.log(y_probs + 1e-10))
+                    if len(valid_probs) > 0:
+                        entropy_y_given_x = -np.sum(valid_probs * np.log(valid_probs))
                         conditional_entropy += p_x * entropy_y_given_x
                 
         return conditional_entropy
@@ -693,7 +698,9 @@ class InformationTheoryEnhancer:
         
         return selected_indices
     
-    def enhance_features(self, n_features=10, include_entropy=True, include_kl=True, is_training=True):
+    def enhance_features(self, n_features=10, include_entropy=True, include_kl=True, 
+                        include_transfer_entropy=False, include_high_signal=True, 
+                        is_training=True, min_snr=2.0):
         """
         Create an enhanced feature set using information theory measures.
         
@@ -705,8 +712,14 @@ class InformationTheoryEnhancer:
             Whether to include entropy-weighted features
         include_kl : bool
             Whether to include KL divergence features
+        include_transfer_entropy : bool
+            Whether to include transfer entropy features
+        include_high_signal : bool
+            Whether to include high signal-to-noise ratio features
         is_training : bool
             Whether this is the training phase (if False, skip MI computation and use fast approximation)
+        min_snr : float
+            Minimum signal-to-noise ratio for high signal features
             
         Returns:
         --------
@@ -729,6 +742,9 @@ class InformationTheoryEnhancer:
             
             if not hasattr(self, 'kl_divergence') and include_kl:
                 self.compute_kl_divergence()
+            
+            if self.transfer_entropy is None and include_transfer_entropy:
+                self.compute_transfer_entropy()
         else:
             # In non-training mode, ensure we have entropy if needed
             if include_entropy and self.entropy is None:
@@ -772,87 +788,83 @@ class InformationTheoryEnhancer:
             enhanced_features = np.column_stack([enhanced_features, kl_features])
             enhanced_names.extend([f"{name}_kl" for name in enhanced_names[:len(top_indices)]])
         
+        # Add transfer entropy features if requested
+        if include_transfer_entropy and self.transfer_entropy is not None:
+            # Get transfer entropy values for each feature with the target (volatility)
+            if self.target_col_idx is not None:
+                te_values = self.transfer_entropy[:, self.target_col_idx]
+                # Use only top features
+                te_values = te_values[top_indices]
+                # Weight features by their transfer entropy
+                # Create a copy of just the base features to apply weights
+                base_features = self.clean_data[:, top_indices]
+                te_weighted = base_features * te_values.reshape(1, -1)
+                
+                enhanced_features = np.column_stack([enhanced_features, te_weighted])
+                enhanced_names.extend([f"{name}_te_weighted" for name in enhanced_names[:len(top_indices)]])
+        
+        # Add high signal-to-noise features if requested
+        if include_high_signal and self.mi_matrix is not None:
+            high_signal_features = []
+            high_signal_names = []
+            
+            # First compute signal-to-noise ratio for each feature
+            for j in range(self.n_features):
+                # Only process top features
+                if j not in top_indices:
+                    continue
+                    
+                # Signal strength: mutual information with target
+                signal = self.mi_matrix[j, self.target_col_idx]
+                
+                # Noise estimate: average MI with non-target features
+                noise_mi = np.delete(self.mi_matrix[j, :], [j, self.target_col_idx])
+                noise = np.mean(noise_mi)
+                
+                # Compute SNR
+                snr = signal / (noise + 1e-10)
+                
+                if snr >= min_snr:
+                    feature_name = self.feature_names[j]
+                    # Get the raw feature
+                    feature = self.scaled_data[:, j]
+                    
+                    try:
+                        # Create high signal feature variations
+                        if hasattr(self, 'kl_divergence') and j < self.kl_divergence.shape[1]:
+                            # 1. KL-weighted feature - check shape compatibility first
+                            kl_feature = self.kl_divergence[:, j]
+                            if len(kl_feature) == len(feature):
+                                kl_weighted = feature * (1 + np.log1p(kl_feature))
+                                high_signal_features.append(kl_weighted)
+                                high_signal_names.append(f"{feature_name}_high_signal_kl")
+                        
+                        # 2. Tail-emphasized feature
+                        tail_factor, _ = self._adjust_for_heavy_tails(feature.reshape(-1, 1))
+                        tail_weighted = feature * tail_factor
+                        high_signal_features.append(tail_weighted)
+                        high_signal_names.append(f"{feature_name}_high_signal_tail")
+                        
+                        # 3. Information-ratio feature
+                        info_ratio = signal / (np.sum(noise_mi) + 1e-10)
+                        info_weighted = feature * info_ratio
+                        high_signal_features.append(info_weighted)
+                        high_signal_names.append(f"{feature_name}_high_signal_info")
+                    except Exception as e:
+                        print(f"Warning: Error creating high signal features for {feature_name}: {str(e)}")
+                        continue
+            
+            if high_signal_features:
+                try:
+                    # Combine and normalize high signal features
+                    high_signal_data = np.column_stack(high_signal_features)
+                    high_signal_data = StandardScaler().fit_transform(high_signal_data)
+                    enhanced_features = np.column_stack([enhanced_features, high_signal_data])
+                    enhanced_names.extend(high_signal_names)
+                except Exception as e:
+                    print(f"Warning: Error combining high signal features: {str(e)}")
+                    print("Continuing without high signal features")
+        
         print(f"Feature enhancement completed in {time.time() - start_time:.2f} seconds")
-        return enhanced_features, enhanced_names
-    
-    def derive_high_signal_features(self, window_size=100, min_snr=2.0):
-        """
-        Derive features with high signal-to-noise ratio using information theory measures.
-        
-        Parameters:
-        -----------
-        window_size : int
-            Window size for computing local statistics
-        min_snr : float
-            Minimum signal-to-noise ratio threshold
-            
-        Returns:
-        --------
-        tuple
-            (derived_features, feature_names)
-        """
-        print("Deriving high signal-to-noise features...")
-        
-        if self.mi_matrix is None:
-            self.compute_mutual_information_matrix()
-            
-        if not hasattr(self, 'kl_divergence'):
-            self.compute_kl_divergence(window_size=window_size)
-            
-        derived_features = []
-        derived_names = []
-        
-        # Compute signal-to-noise ratio for each feature
-        for j in range(self.n_features):
-            # Signal strength: mutual information with target
-            signal = self.mi_matrix[j, self.target_col_idx]
-            
-            # Noise estimate: average MI with non-target features
-            noise_mi = np.delete(self.mi_matrix[j, :], [j, self.target_col_idx])
-            noise = np.mean(noise_mi)
-            
-            # Compute SNR
-            snr = signal / (noise + 1e-10)
-            
-            if snr >= min_snr:
-                # Get the raw feature
-                feature = self.scaled_data[:, j]
-                
-                # Compute local information measures
-                local_kl = self.kl_divergence[:, j]
-                
-                # Create enhanced feature variations
-                # 1. KL-weighted feature
-                kl_weighted = feature * (1 + np.log1p(local_kl))
-                
-                # 2. Tail-emphasized feature
-                tail_factor, _ = self._adjust_for_heavy_tails(feature.reshape(-1, 1))
-                tail_weighted = feature * tail_factor
-                
-                # 3. Information-ratio feature
-                info_ratio = signal / (np.sum(noise_mi) + 1e-10)
-                info_weighted = feature * info_ratio
-                
-                # Add derived features
-                derived_features.extend([
-                    kl_weighted,
-                    tail_weighted,
-                    info_weighted
-                ])
-                
-                base_name = self.feature_names[j]
-                derived_names.extend([
-                    f"{base_name}_kl_weighted",
-                    f"{base_name}_tail_weighted",
-                    f"{base_name}_info_weighted"
-                ])
-                
-        if not derived_features:
-            print("No features met the minimum SNR threshold")
-            return np.array([]), []
-            
-        # Combine and normalize derived features
-        derived_features = np.column_stack(derived_features)
-        derived_features = StandardScaler().fit_transform(derived_features)
-        
-        return derived_features, derived_names 
+        print(f"Enhanced feature set contains {enhanced_features.shape[1]} features")
+        return enhanced_features, enhanced_names 

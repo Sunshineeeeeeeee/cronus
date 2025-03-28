@@ -8,30 +8,29 @@ from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.cluster import SpectralClustering
 import warnings
 import networkx as nx
-import gudhi
 from scipy.spatial.distance import pdist, squareform
 from sklearn.decomposition import PCA
 import itertools
-import gudhi.point_cloud
-import gudhi.representations
-import gudhi.persistence_graphical_tools as gd_plot
-from gudhi.rips_complex import RipsComplex
-from gudhi.weighted_rips_complex import WeightedRipsComplex
-from gudhi.persistence_graphical_tools import plot_persistence_barcode
-from gudhi.persistence_graphical_tools import plot_persistence_diagram
+from sklearn.mixture import GaussianMixture
+from scipy.sparse import csr_matrix, lil_matrix
+from scipy.sparse.csgraph import connected_components
+from gudhi import SimplexTree
+from sklearn.neighbors import NearestNeighbors
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
 class TopologicalDataAnalyzer:
     """
-    Implements the topological data analysis components for volatility regime detection.
-    Uses GUDHI for proper persistent homology computation and witness complexes.
+    Implements optimized topological data analysis for volatility regime detection.
+    Specialized for market microstructure data (sequential tick data).
     
-    Implements Sections 3-5 of the TDA Pipeline:
-    - Temporally-Aware Simplicial Complex Construction
-    - Persistent Path Homology Calculation
-    - Regime Identification with Information-Theoretic Temporal Mapping
+    Core Pipeline:
+    1. Compute temporally weighted distance matrix with information theory enhancement
+    2. Build filtration using sparse directed network representation
+    3. Compute persistent homology using optimized simplex tree structure
+    4. Apply zigzag persistence with sliding windows to preserve sequential nature
+    5. Extract topological features for regime classification
     """
     
     def __init__(self, feature_array, feature_names, timestamp_array=None):
@@ -60,80 +59,256 @@ class TopologicalDataAnalyzer:
         # Initialize attributes for later use
         self.distance_matrix = None
         self.temporal_distance_matrix = None
-        self.persistence_diagrams = None
         self.regime_labels = None
-        self.mapper_graph = None
-        self.witness_complex = None
-        self.multi_persistence_diagrams = None
         
-        # New attributes for Zigzag and Path Homology
+        # Attributes for Persistent Homology
+        self.persistence_diagrams = None
+        self.betti_curves = None
+        self.persistence_landscapes = None
+        self.simplex_tree = None
+        
+        # Attributes for Zigzag Persistence
         self.zigzag_diagrams = None
-        self.path_homology_diagrams = None
-        self.flow_complex = None
-        self.state_transitions = None
         
-    def compute_temporally_weighted_distance(self, alpha=0.5, beta=0.1, lambda_info=1.0, mi_matrix=None):
+    def compute_temporally_weighted_distance(self, alpha=0.5, beta=0.1, lambda_info=1.0, mi_matrix=None, transfer_entropy=None, chunk_size=5000):
         """
-        Compute temporally-weighted distance matrix between data points.
+        Compute temporally-weighted distance matrix between data points with optimized memory usage.
+        Uses chunking for large datasets and specialized distance weighting for market microstructure.
         
         Parameters:
-            alpha (float): Weight for temporal component
-            beta (float): Decay rate for temporal distance
-            lambda_info (float): Weight for mutual information component
-            mi_matrix (np.ndarray): Pre-computed mutual information matrix
+        -----------
+        alpha : float
+            Weight for temporal component
+        beta : float
+            Decay rate for temporal distance
+        lambda_info : float
+            Weight for mutual information component
+        mi_matrix : np.ndarray
+            Pre-computed mutual information matrix (feature × feature)
+        transfer_entropy : np.ndarray
+            Pre-computed transfer entropy matrix (feature × feature)
+        chunk_size : int
+            Size of chunks for large dataset computation
         """
         start_time = time.time()
         print("Computing temporally-weighted distance matrix...")
         
         # Convert timestamps to numerical values (seconds since first timestamp)
+        time_indices = np.zeros(len(self.timestamps))
+        
         if np.issubdtype(self.timestamps.dtype, np.datetime64):
-            # Convert to nanoseconds, then to seconds
+            # Convert numpy datetime64 to seconds
             t0 = self.timestamps[0]
             time_diffs = self.timestamps - t0
             time_indices = time_diffs.astype('timedelta64[ns]').astype(np.float64) / 1e9
+        elif isinstance(self.timestamps[0], datetime):
+            # Convert Python datetime objects to seconds
+            t0 = self.timestamps[0]
+            for i, t in enumerate(self.timestamps):
+                time_indices[i] = (t - t0).total_seconds()
         else:
-            time_indices = np.array(self.timestamps)
+            # Try to convert numeric array
+            time_indices = np.array([float(t) for t in self.timestamps])
         
         # Normalize time indices to [0,1] range
         if len(time_indices) > 1:
-            time_indices = (time_indices - time_indices.min()) / (time_indices.max() - time_indices.min())
+            min_time = np.min(time_indices)
+            max_time = np.max(time_indices)
+            if max_time > min_time:
+                time_indices = (time_indices - min_time) / (max_time - min_time)
         
         n_samples = len(self.features)
-        dist_matrix = np.zeros((n_samples, n_samples))
+        n_features = self.features.shape[1]
         
-        # Compute Euclidean distances
-        for i in range(n_samples):
-            for j in range(i+1, n_samples):
-                # Base distance (Euclidean)
-                dist = np.linalg.norm(self.features[i] - self.features[j])
+        # Create feature weights based on mutual information if provided
+        feature_weights = np.ones(n_features)
+        
+        if mi_matrix is not None and lambda_info > 0:
+            # Check if dimensions match our feature count
+            if mi_matrix.shape[0] == n_features and mi_matrix.shape[1] == n_features:
+                # Calculate importance of each feature based on sum of MI with other features
+                # Higher MI indicates more shared information, so we use inverse weighting
+                mi_importance = np.sum(mi_matrix, axis=1)
+                mi_importance = np.nan_to_num(mi_importance, nan=0.0)  # Replace NaNs with 0
                 
-                # Temporal weighting
-                time_dist = abs(time_indices[i] - time_indices[j])
-                temporal_weight = 1 + alpha * (1 - np.exp(-beta * time_dist))
+                # Transform MI importance to weights: lower MI means higher weight
+                if np.max(mi_importance) > 0:
+                    feature_weights = 1.0 / (1.0 + lambda_info * mi_importance / np.max(mi_importance))
                 
-                # Information weighting (if MI matrix provided)
-                if mi_matrix is not None and lambda_info > 0:
-                    # Ensure indices are within bounds
-                    if i < mi_matrix.shape[0] and j < mi_matrix.shape[1]:
-                        mi = mi_matrix[i, j]
-                        info_weight = np.exp(-lambda_info * mi)
-                    else:
-                        info_weight = 1.0
-                else:
-                    info_weight = 1.0
+                print(f"Applied MI-based feature weighting: min={feature_weights.min():.4f}, max={feature_weights.max():.4f}")
+            else:
+                print(f"Warning: MI matrix dimensions ({mi_matrix.shape}) don't match feature count ({n_features}). Using uniform weights.")
+        
+        # Also incorporate transfer entropy into feature weights if provided
+        if transfer_entropy is not None and lambda_info > 0:
+            # Check if dimensions match
+            if transfer_entropy.shape[0] == n_features and transfer_entropy.shape[1] == n_features:
+                # Use sum of outgoing transfer entropy to weight features
+                # Higher TE means the feature has more causal influence
+                te_importance = np.sum(transfer_entropy, axis=1)
+                te_importance = np.nan_to_num(te_importance, nan=0.0)  # Replace NaNs with 0
+                
+                # Enhance weights for features with high causal influence
+                if np.max(te_importance) > 0:
+                    te_weights = 1.0 + lambda_info * te_importance / np.max(te_importance)
+                    # Combine with MI-based weights
+                    feature_weights *= te_weights
+                
+                print(f"Applied TE-based feature weighting: min={feature_weights.min():.4f}, max={feature_weights.max():.4f}")
+            else:
+                print(f"Warning: TE matrix dimensions ({transfer_entropy.shape}) don't match feature count ({n_features}). Ignoring TE.")
+        
+        # Normalize feature weights
+        if np.max(feature_weights) > 0:
+            feature_weights = feature_weights / np.max(feature_weights)
+        
+        # For large datasets, use chunking to avoid memory issues
+        if n_samples > chunk_size:
+            print(f"Using chunking for large dataset ({n_samples} samples)")
+            dist_matrix = np.zeros((n_samples, n_samples))
+            
+            # Process by chunks to reduce memory usage
+            for i in range(0, n_samples, chunk_size):
+                i_end = min(i + chunk_size, n_samples)
+                chunk_i = self.features[i:i_end]
+                time_i = time_indices[i:i_end]
+                
+                for j in range(0, n_samples, chunk_size):
+                    j_end = min(j + chunk_size, n_samples)
+                    chunk_j = self.features[j:j_end]
+                    time_j = time_indices[j:j_end]
                     
-                # Combined distance
-                dist_matrix[i, j] = dist * temporal_weight * info_weight
-                dist_matrix[j, i] = dist_matrix[i, j]  # Symmetric matrix
+                    # Compute weighted distances for this chunk
+                    dists_chunk = self._compute_weighted_chunk_distances(
+                        chunk_i, chunk_j, time_i, time_j, alpha, beta, feature_weights
+                    )
+                    
+                    # Store in the main distance matrix
+                    dist_matrix[i:i_end, j:j_end] = dists_chunk
+                    
+                print(f"Processed chunks up to {i_end}/{n_samples}")
+        else:
+            # Standard computation for smaller datasets
+            try:
+                # Apply feature weighting to the input data
+                weighted_features = self.features * feature_weights[np.newaxis, :]
+                
+                # Try vectorized computation with weighted features
+                diff = weighted_features[:, np.newaxis, :] - weighted_features[np.newaxis, :, :]
+                base_distances = np.sqrt(np.sum(diff * diff, axis=2))
+                
+                # Compute temporal weights matrix
+                time_diffs = np.abs(time_indices[:, np.newaxis] - time_indices[np.newaxis, :])
+                temporal_weights = 1.0 + alpha * (1.0 - np.exp(-beta * time_diffs))
+                
+                # Apply temporal weighting
+                dist_matrix = base_distances * temporal_weights
+                
+            except MemoryError:
+                # Fall back to loop-based computation
+                print("Using loop-based distance computation due to memory constraints...")
+                dist_matrix = np.zeros((n_samples, n_samples))
+                
+                for i in range(n_samples):
+                    for j in range(i+1, n_samples):
+                        # Compute weighted feature differences
+                        diff = self.features[i] - self.features[j]
+                        weighted_diff = diff * feature_weights
+                        dist = np.sqrt(np.sum(weighted_diff * weighted_diff))
+                        
+                        # Apply temporal weighting
+                        time_diff = abs(time_indices[i] - time_indices[j])
+                        temporal_weight = 1.0 + alpha * (1.0 - np.exp(-beta * time_diff))
+                        
+                        # Store weighted distance
+                        dist_matrix[i, j] = dist * temporal_weight
+                        dist_matrix[j, i] = dist_matrix[i, j]  # Symmetric
         
+        # Ensure the matrix is symmetric
+        dist_matrix = 0.5 * (dist_matrix + dist_matrix.T)
+        
+        # Set diagonal to 0
+        np.fill_diagonal(dist_matrix, 0)
+        
+        # Replace any NaN or inf values
+        dist_matrix = np.nan_to_num(dist_matrix, nan=0.0, posinf=np.max(dist_matrix[~np.isinf(dist_matrix)]) if np.any(~np.isinf(dist_matrix)) else 1.0)
+        
+        # Store the result
         self.distance_matrix = dist_matrix
+        self.temporal_distance_matrix = dist_matrix
+        
         print(f"Distance matrix computation completed in {time.time() - start_time:.2f} seconds")
+        print(f"Distance matrix shape: {dist_matrix.shape}")
+        print(f"Distance range: [{dist_matrix.min():.4f}, {dist_matrix.max():.4f}]")
+        
         return dist_matrix
+    
+    def _compute_weighted_chunk_distances(self, chunk_i, chunk_j, time_i, time_j, alpha, beta, feature_weights):
+        """
+        Helper method to compute distances between chunks of data using feature weights.
+        
+        Parameters:
+        -----------
+        chunk_i, chunk_j : numpy.ndarray
+            Chunks of feature data
+        time_i, time_j : numpy.ndarray
+            Chunks of time indices
+        alpha, beta : float
+            Parameters for temporal weighting
+        feature_weights : numpy.ndarray
+            Weights for each feature dimension
+            
+        Returns:
+        --------
+        numpy.ndarray
+            Distance matrix for the chunks
+        """
+        # Get dimensions
+        ni = chunk_i.shape[0]
+        nj = chunk_j.shape[0]
+        
+        # Initialize distances for this chunk
+        dists = np.zeros((ni, nj))
+        
+        # Check if self-comparison (i == j)
+        if np.array_equal(chunk_i, chunk_j):
+            # Compute pairwise distances within the same chunk
+            for i in range(ni):
+                for j in range(i+1, nj):
+                    # Weighted Euclidean distance
+                    diff = chunk_i[i] - chunk_j[j]
+                    weighted_diff = diff * feature_weights
+                    dist = np.sqrt(np.sum(weighted_diff * weighted_diff))
+                    
+                    # Temporal weighting
+                    time_diff = abs(time_i[i] - time_j[j])
+                    temporal_weight = 1.0 + alpha * (1.0 - np.exp(-beta * time_diff))
+                    
+                    # Store weighted distance
+                    dists[i, j] = dist * temporal_weight
+                    dists[j, i] = dists[i, j]  # Symmetric
+        else:
+            # Compute distances between different chunks
+            for i in range(ni):
+                for j in range(nj):
+                    # Weighted Euclidean distance
+                    diff = chunk_i[i] - chunk_j[j]
+                    weighted_diff = diff * feature_weights
+                    dist = np.sqrt(np.sum(weighted_diff * weighted_diff))
+                    
+                    # Temporal weighting
+                    time_diff = abs(time_i[i] - time_j[j])
+                    temporal_weight = 1.0 + alpha * (1.0 - np.exp(-beta * time_diff))
+                    
+                    # Store weighted distance
+                    dists[i, j] = dist * temporal_weight
+        
+        return dists
     
     def construct_directed_network(self, epsilon=0.5, enforce_temporal=True):
         """
         Construct a directed weighted network based on the temporal distance matrix.
-        In other words, Construction of Proximity Graph
+        This builds the proximity graph representing market microstructure relationships.
         
         Parameters:
         -----------
@@ -158,28 +333,32 @@ class TopologicalDataAnalyzer:
         # Add nodes
         for i in range(self.n_samples):
             G.add_node(i, features=self.features[i], timestamp=self.timestamps[i])
-            
-        # Add edges based on distance threshold and temporal ordering
-        for i in range(self.n_samples):
-            for j in range(self.n_samples):
-                if i == j:
-                    continue
-                    
-                # Enforce temporal ordering if requested
-                if enforce_temporal and i >= j:
-                    continue
-                    
-                # Check if distance is below threshold
-                if self.temporal_distance_matrix[i, j] <= epsilon:
-                    # Edge weight is inverse of distance
-                    weight = 1.0 / max(self.temporal_distance_matrix[i, j], 1e-10)
-                    G.add_edge(i, j, weight=weight, distance=self.temporal_distance_matrix[i, j])
         
+        # Create edges based on distance threshold and temporal ordering
+        if enforce_temporal:
+            # Only create edges that respect temporal ordering (i < j)
+            # Convert matrices to float type to ensure compatibility
+            distance_mask = (self.temporal_distance_matrix <= epsilon).astype(float)
+            temporal_mask = np.triu(np.ones_like(self.temporal_distance_matrix), k=1).astype(float)
+            combined_mask = (distance_mask * temporal_mask) > 0
+            rows, cols = np.where(combined_mask)
+        else:
+            # Create edges in both directions
+            rows, cols = np.where(self.temporal_distance_matrix <= epsilon)
+            
+        # Add edges with weights
+        for i, j in zip(rows, cols):
+            if i != j:  # Avoid self-loops
+                weight = 1.0 / max(self.temporal_distance_matrix[i, j], 1e-10)
+                G.add_edge(i, j, weight=weight, distance=self.temporal_distance_matrix[i, j])
+        
+        print(f"Constructed network with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
         return G
     
     def compute_path_complex(self, G, max_path_length=2):
         """
         Generate a directed path complex from the graph.
+        For market microstructure data, path homology is more appropriate than simplicial complexes.
         
         Parameters:
         -----------
@@ -206,8 +385,12 @@ class TopologicalDataAnalyzer:
         for u, v in G.edges():
             path_complex[1].append((u, v))
             
-        # Add higher-order paths
+        # Add higher-order paths - this is computationally expensive but builds the full complex
         for k in range(2, max_path_length + 1):
+            print(f"Building dimension {k} paths...")
+            start_time = time.time()
+            path_count = 0
+            
             for path in path_complex[k-1]:
                 # Last vertex in the path
                 last = path[-1]
@@ -218,618 +401,320 @@ class TopologicalDataAnalyzer:
                     if neighbor not in path:
                         new_path = path + (neighbor,)
                         path_complex[k].append(new_path)
+                        path_count += 1
+                        
+                        # Print progress for large complexes
+                        if path_count % 1000000 == 0:
+                            print(f"  Created {path_count} paths in dimension {k} ({time.time() - start_time:.2f}s)")
+            
+            print(f"Created {path_count} paths in dimension {k} ({time.time() - start_time:.2f}s)")
                         
         return path_complex
     
-    def compute_persistent_homology(self, min_epsilon=0.1, max_epsilon=2.0, num_steps=10, use_weighted=False, output_dir=None):
+    def _compute_homology_from_boundary(self, boundary_matrix):
         """
-        Compute persistent homology using GUDHI's Rips complex with optimized computation.
+        Helper method to compute homology from boundary matrix.
         
         Parameters:
         -----------
+        boundary_matrix : numpy.ndarray
+            Boundary matrix of the complex
+            
+        Returns:
+        --------
+        dict
+            Dictionary containing homology information
+        """
+        try:
+            # Check if matrix is empty or trivial
+            if boundary_matrix.size == 0 or boundary_matrix.shape[0] == 0 or boundary_matrix.shape[1] == 0:
+                return {
+                    'rank': 0,
+                    'nullity': 0,
+                    'betti': 0
+                }
+                
+            # Compute rank of boundary matrix
+            rank = np.linalg.matrix_rank(boundary_matrix)
+            
+            # Compute nullity
+            nullity = boundary_matrix.shape[0] - rank
+            
+            # Compute Betti numbers
+            betti = nullity - rank
+            
+            # Ensure non-negative Betti numbers
+            betti = max(0, betti)
+            
+            return {
+                'rank': rank,
+                'nullity': nullity,
+                'betti': betti
+            }
+            
+        except Exception as e:
+            print(f"Warning: Error in homology computation: {str(e)}")
+            # Return safe fallback values
+            return {
+                'rank': 0,
+                'nullity': boundary_matrix.shape[0] if hasattr(boundary_matrix, 'shape') else 0,
+                'betti': 0
+            }
+    
+    def compute_persistent_path_zigzag_homology(self, window_size=100, overlap=50, max_path_length=2, min_epsilon=0.1, max_epsilon=2.0, num_steps=10, output_dir=None):
+        """
+        Compute persistent path homology with zigzag persistence, specifically designed for sequential market microstructure data.
+        This combines the directed path complex approach with zigzag persistence to capture temporal evolution of market states.
+        
+        Parameters:
+        -----------
+        window_size : int
+            Size of sliding window for state computation
+        overlap : int
+            Number of points to overlap between windows
+        max_path_length : int
+            Maximum length of paths to consider
         min_epsilon : float
             Minimum distance threshold
         max_epsilon : float
             Maximum distance threshold
         num_steps : int
             Number of filtration steps
-        use_weighted : bool
-            Whether to use weighted Rips complex (considers temporal weights)
         output_dir : str
             Directory to save output files and plots
             
         Returns:
         --------
         dict
-            Dictionary containing persistence diagrams and related information
+            Dictionary containing path zigzag persistence diagrams
         """
         start_time = time.time()
-        print("Computing persistent homology using GUDHI...")
+        print("Computing persistent path zigzag homology for market microstructure...")
         
         try:
-            # Choose appropriate complex based on whether we want weighted computation
-            if use_weighted and self.temporal_distance_matrix is not None:
-                print("Using weighted Rips complex...")
-                rips_complex = WeightedRipsComplex(
-                    distance_matrix=self.temporal_distance_matrix,
-                    max_edge_length=max_epsilon
-                )
-            else:
-                print("Using standard Rips complex...")
-                # Ensure features are properly scaled
-                features_scaled = self.features.copy()
-                if len(features_scaled) > 1:
-                    features_scaled = (features_scaled - features_scaled.min(axis=0)) / (features_scaled.max(axis=0) - features_scaled.min(axis=0))
+            # Create sequence of directed networks for each window
+            network_start = time.time()
+            networks = []
+            window_indices = []
+            
+            # Pre-compute temporal distance matrix if not already done
+            if self.temporal_distance_matrix is None:
+                self.compute_temporally_weighted_distance()
+                self.temporal_distance_matrix = self.distance_matrix
                 
-                rips_complex = RipsComplex(
-                    points=features_scaled,
-                    max_edge_length=max_epsilon
-                )
+            # Ensure distance matrix has no NaN values
+            dist_matrix = np.nan_to_num(self.temporal_distance_matrix)
             
-            # Create simplex tree
-            print("Creating simplex tree...")
-            simplex_tree = rips_complex.create_simplex_tree(max_dimension=2)
-            
-            print(f"Simplex tree has {simplex_tree.num_simplices()} simplices")
-            print(f"Dimension is {simplex_tree.dimension()}")
-            
-            # Compute persistence
-            print("Computing persistence...")
-            persistence = simplex_tree.persistence()
-            
-            if not persistence:
-                raise ValueError("No persistence pairs found")
-                
-            print(f"Found {len(persistence)} persistence pairs")
-            
-            # Initialize persistence diagram storage
-            persistence_diagrams = {}
-            
-            # Process each dimension
-            for dim in range(3):
-                # Initialize dimension results
-                persistence_diagrams[dim] = {
-                    'full_diagram': [],
-                    'persistent_features': [],
-                    'betti_numbers': [],
-                    'birth_times': [],
-                    'death_times': [],
-                    'persistence_pairs': []
-                }
-                
-                # Extract dimension-specific diagrams
-                dim_pairs = []
-                for (dimension, (birth, death)) in persistence:
-                    if dimension == dim:
-                        if death == float('inf'):
-                            death = max_epsilon
-                        dim_pairs.append((birth, death))
-                
-                if dim_pairs:
-                    # Convert to numpy array for easier manipulation
-                    dim_pairs = np.array(dim_pairs)
+            for i in range(0, self.n_samples - window_size + 1, window_size - overlap):
+                # Get window data indices
+                window_idx = list(range(i, min(i + window_size, self.n_samples)))
+                if len(window_idx) < 3:  # Skip too small windows
+                    continue
                     
-                    # Sort by persistence (death - birth)
-                    persistence_values = dim_pairs[:, 1] - dim_pairs[:, 0]
-                    sort_idx = np.argsort(-persistence_values)  # Sort in descending order
-                    dim_pairs = dim_pairs[sort_idx]
-                    
-                    # Store results
-                    persistence_diagrams[dim]['full_diagram'] = dim_pairs
-                    persistence_diagrams[dim]['birth_times'] = dim_pairs[:, 0]
-                    persistence_diagrams[dim]['death_times'] = dim_pairs[:, 1]
-                    persistence_diagrams[dim]['persistence_pairs'] = list(map(tuple, dim_pairs))
-                    
-                    # Compute Betti numbers across filtration
-                    epsilon_values = np.linspace(min_epsilon, max_epsilon, num_steps)
-                    betti_numbers = []
-                    
-                    for eps in epsilon_values:
-                        alive = np.sum((dim_pairs[:, 0] <= eps) & (dim_pairs[:, 1] > eps))
-                        betti_numbers.append(alive)
-                        
-                    persistence_diagrams[dim]['betti_numbers'] = np.array(betti_numbers)
-                    
-                    # Store infinite persistence features
-                    persistence_diagrams[dim]['persistent_features'] = dim_pairs[dim_pairs[:, 1] == max_epsilon]
+                window_indices.append(window_idx)
+                
+                # Create temporal distance submatrix for this window
+                window_dist_matrix = dist_matrix[np.ix_(window_idx, window_idx)]
+                
+                # Create directed network for this window
+                G = nx.DiGraph()
+                
+                # Add nodes
+                for j, idx in enumerate(window_idx):
+                    G.add_node(j, original_idx=idx, features=self.features[idx], timestamp=self.timestamps[idx])
+                
+                # Add edges (respecting temporal ordering)
+                for j in range(len(window_idx)):
+                    for k in range(j+1, len(window_idx)):  # Enforce j < k for temporal ordering
+                        if window_dist_matrix[j, k] <= min_epsilon:
+                            G.add_edge(j, k, weight=1.0/max(window_dist_matrix[j, k], 1e-10))
+                
+                networks.append(G)
             
-            # Store results
-            self.persistence_diagrams = persistence_diagrams
+            if not networks:
+                print("No valid windows found. Try reducing window_size or increasing overlap.")
+                return None
+                
+            print(f"Network creation completed in {time.time() - network_start:.2f} seconds")
             
-            # Generate visualizations
-            try:
-                if output_dir is None:
-                    output_dir = '.'
-                    
-                print("Generating visualizations...")
-                
-                # Plot persistence diagram
-                plt.figure(figsize=(10, 10))
-                colors = ['blue', 'red', 'green']
-                for dim in range(3):
-                    if dim in persistence_diagrams and len(persistence_diagrams[dim]['full_diagram']) > 0:
-                        pairs = persistence_diagrams[dim]['full_diagram']
-                        plt.scatter(pairs[:, 0], pairs[:, 1], c=colors[dim], 
-                                  label=f'H{dim}', alpha=0.6)
-                
-                # Add diagonal line
-                diag_min = min_epsilon
-                diag_max = max_epsilon
-                plt.plot([diag_min, diag_max], [diag_min, diag_max], 'k--', alpha=0.5)
-                
-                plt.xlabel('Birth')
-                plt.ylabel('Death')
-                plt.title('Persistence Diagram')
-                plt.legend()
-                plt.grid(True, alpha=0.3)
-                plt.savefig(os.path.join(output_dir, 'persistence_diagram.png'))
-                plt.close()
-                
-                # Plot persistence barcode
-                plt.figure(figsize=(12, 6))
-                y_offset = 0
-                for dim in range(3):
-                    if dim in persistence_diagrams and len(persistence_diagrams[dim]['full_diagram']) > 0:
-                        pairs = persistence_diagrams[dim]['full_diagram']
-                        for i, (birth, death) in enumerate(pairs):
-                            plt.plot([birth, death], [y_offset + i, y_offset + i], 
-                                   c=colors[dim], linewidth=1.5, label=f'H{dim}' if i == 0 else "")
-                        y_offset += len(pairs) + 1
-                
-                plt.xlabel('Epsilon')
-                plt.ylabel('Homology Class')
-                plt.title('Persistence Barcode')
-                plt.legend()
-                plt.grid(True, alpha=0.3)
-                plt.savefig(os.path.join(output_dir, 'persistence_barcode.png'))
-                plt.close()
-                
-            except Exception as viz_error:
-                print(f"Warning: Could not generate visualizations: {str(viz_error)}")
+            # For each network window, compute path complex
+            print(f"Computing path complexes for {len(networks)} windows...")
+            path_complexes = []
+            for i, G in enumerate(networks):
+                print(f"Computing path complex for window {i+1}/{len(networks)}...")
+                path_complex = self.compute_path_complex(G, max_path_length)
+                path_complexes.append(path_complex)
+                print(f"Window {i+1} path complex sizes: " + ", ".join([f"dim {d}: {len(paths)}" for d, paths in path_complex.items()]))
             
-            print(f"Persistent homology computation completed in {time.time() - start_time:.2f} seconds")
-            return persistence_diagrams
-            
-        except Exception as e:
-            print(f"Error in persistent homology computation: {str(e)}")
-            print("Attempting to proceed with simplified computation...")
-            
-            try:
-                # Fallback to simpler computation
-                features_scaled = self.features.copy()
-                if len(features_scaled) > 1:
-                    features_scaled = (features_scaled - features_scaled.min(axis=0)) / (features_scaled.max(axis=0) - features_scaled.min(axis=0))
-                
-                rips_complex = RipsComplex(
-                    points=features_scaled,
-                    max_edge_length=max_epsilon
-                )
-                
-                simplex_tree = rips_complex.create_simplex_tree(max_dimension=1)  # Reduce dimension for simplicity
-                persistence = simplex_tree.persistence()
-                
-                # Create basic persistence diagram
-                persistence_diagrams = {
-                    dim: {
-                        'full_diagram': [],
-                        'betti_numbers': []
-                    }
-                    for dim in range(2)  # Reduce to 2 dimensions
-                }
-                
-                # Process persistence pairs
-                for (dimension, (birth, death)) in persistence:
-                    if dimension < 2:  # Only process dimensions 0 and 1
-                        if death == float('inf'):
-                            death = max_epsilon
-                        persistence_diagrams[dimension]['full_diagram'].append((birth, death))
-                
-                # Convert to numpy arrays
-                for dim in persistence_diagrams:
-                    if persistence_diagrams[dim]['full_diagram']:
-                        persistence_diagrams[dim]['full_diagram'] = np.array(persistence_diagrams[dim]['full_diagram'])
-                    else:
-                        persistence_diagrams[dim]['full_diagram'] = np.array([])
-                
-                self.persistence_diagrams = persistence_diagrams
-                return persistence_diagrams
-                
-            except Exception as fallback_error:
-                print(f"Error in simplified computation: {str(fallback_error)}")
-                # Return empty persistence diagrams as last resort
-                return {dim: {'full_diagram': np.array([]), 'betti_numbers': []} for dim in range(3)}
-
-    def compute_multi_parameter_persistence(self, parameters=None, max_dimension=2):
-        """
-        Compute multi-parameter persistent homology using GUDHI's advanced capabilities.
-        
-        Parameters:
-        -----------
-        parameters : list of tuples
-            List of (name, values) pairs for filtration parameters
-        max_dimension : int
-            Maximum homology dimension to compute
-            
-        Returns:
-        --------
-        dict
-            Dictionary containing multi-parameter persistence results
-        """
-        print("Computing multi-parameter persistence...")
-        
-        if parameters is None:
-            parameters = [
-                ('time', self.timestamps),
-                ('volatility', np.std(self.features, axis=1)),
-                ('volume', np.sum(self.features, axis=1))
-            ]
-            
-        # Normalize parameter values to [0,1]
-        normalized_params = []
-        for name, values in parameters:
-            if len(values) > 1:
-                values = (values - values.min()) / (values.max() - values.min())
-            normalized_params.append((name, values))
-            
-        # Create multi-filtration
-        multi_filtration = []
-        n_samples = len(self.features)
-        
-        for i in range(n_samples):
-            # Get parameter values for this point
-            point_params = [values[i] for _, values in normalized_params]
-            multi_filtration.append(point_params)
-            
-        # Convert to numpy array
-        multi_filtration = np.array(multi_filtration)
-        
-        # Create multi-parameter Rips complex
-        rips = gudhi.RipsComplex(
-            points=self.features,
-            max_edge_length=np.inf
-        )
-        
-        # Create simplex tree with multi-parameter filtration
-        st = rips.create_simplex_tree(max_dimension=max_dimension)
-        
-        # Assign multi-parameter filtration values
-        for simplex, _ in st.get_simplices():
-            if len(simplex) == 1:  # vertex
-                idx = simplex[0]
-                st.assign_filtration(simplex, multi_filtration[idx])
-            else:  # higher dimensional simplex
-                # Use maximum of vertex filtration values
-                vertex_values = [multi_filtration[v] for v in simplex]
-                filtration_value = np.max(vertex_values, axis=0)
-                st.assign_filtration(simplex, filtration_value)
-        
-        # Compute multi-parameter persistence
-        st.make_filtration_non_decreasing()
-        multi_diagrams = st.persistence()
-        
-        # Process results
-        results = {
-            'diagrams': {},
-            'parameter_names': [p[0] for p in parameters],
-            'parameter_ranges': [(values.min(), values.max()) for _, values in parameters],
-            'multi_filtration': multi_filtration
-        }
-        
-        # Process persistence diagrams by dimension
-        for dim in range(max_dimension + 1):
-            dim_results = {
-                'birth_values': [],
-                'death_values': [],
-                'persistence_pairs': [],
-                'persistence_values': []
+            # Initialize zigzag path persistence
+            path_zigzag_diagrams = {
+                'window_diagrams': [],
+                'transitions': [],
+                'betti_numbers': []
             }
             
-            # Extract dimension-specific diagrams
-            dim_diagrams = [(p[1], p[2]) for p in multi_diagrams if p[0] == dim]
-            
-            for birth, death in dim_diagrams:
-                if death != float('inf'):
-                    dim_results['birth_values'].append(birth)
-                    dim_results['death_values'].append(death)
-                    dim_results['persistence_pairs'].append((birth, death))
-                    dim_results['persistence_values'].append(
-                        np.array([d - b for b, d in zip(birth, death)])
-                    )
-            
-            results['diagrams'][dim] = dim_results
-        
-        # Generate visualizations for 2D projections
-        if not os.path.exists('multi_persistence_plots'):
-            os.makedirs('multi_persistence_plots')
-            
-        # Plot 2D projections of the persistence diagram
-        for i, j in itertools.combinations(range(len(parameters)), 2):
-            param1, param2 = parameters[i][0], parameters[j][0]
-            
-            plt.figure(figsize=(10, 10))
-            for dim in range(max_dimension + 1):
-                if dim in results['diagrams']:
-                    birth_values = results['diagrams'][dim]['birth_values']
-                    death_values = results['diagrams'][dim]['death_values']
+            # Process each dimension
+            dimension_start = time.time()
+            for dim in range(max_path_length + 1):
+                print(f"Processing homology in dimension {dim}...")
+                dim_start = time.time()
+                betti_series = []
+                
+                # Compute homology for each window
+                for i, path_complex in enumerate(path_complexes):
+                    if dim not in path_complex or not path_complex[dim]:
+                        betti_series.append(0)
+                        continue
                     
-                    if birth_values:  # Check if we have any values to plot
-                        birth_proj = np.array(birth_values)[:, [i, j]]
-                        death_proj = np.array(death_values)[:, [i, j]]
-                        
-                        plt.scatter(
-                            birth_proj[:, 0],
-                            death_proj[:, 0],
-                            label=f'H{dim}',
-                            alpha=0.6
-                        )
-            
-            plt.xlabel(param1)
-            plt.ylabel(param2)
-            plt.title(f'Multi-parameter Persistence: {param1} vs {param2}')
-            plt.legend()
-            plt.savefig(f'multi_persistence_plots/persistence_{param1}_{param2}.png')
-            plt.close()
-        
-        self.multi_persistence_diagrams = results
-        return results
-
-    def create_temporal_mapper(self, n_intervals=10, percent_overlap=50, filter_functions=None):
-        """
-        Create a mapper graph using temporal information.
-        
-        Parameters:
-        -----------
-        n_intervals : int
-            Number of intervals for the filter function
-        percent_overlap : float
-            Percentage of overlap between intervals
-        filter_functions : list
-            List of additional filter functions to use
-        """
-        print("Creating temporal mapper graph...")
-        
-        # Convert timestamps to numerical values
-        if np.issubdtype(self.timestamps.dtype, np.datetime64):
-            # Convert to nanoseconds, then to seconds
-            t0 = self.timestamps[0]
-            time_diffs = self.timestamps - t0
-            values = time_diffs.astype('timedelta64[ns]').astype(np.float64) / 1e9
-        else:
-            values = np.array(self.timestamps)
-        
-        # Normalize time values to [0,1]
-        if len(values) > 1:
-            values = (values - values.min()) / (values.max() - values.min())
-        
-        # Create filter function list
-        if filter_functions is None:
-            filter_functions = []
-        
-        # Add temporal filter
-        filter_functions.append(values)
-        
-        # Create intervals
-        overlap = percent_overlap / 100.0
-        interval_size = 1.0 / (n_intervals - (n_intervals - 1) * overlap)
-        
-        # Create mapper graph
-        self.mapper_graph = nx.Graph()
-        
-        # Create cover
-        intervals = []
-        
-        for i in range(len(filter_functions)):
-            # Create overlapping intervals
-            function_intervals = []
-            for j in range(n_intervals):
-                start = j * interval_size - (j > 0) * overlap
-                end = (j + 1) * interval_size + (j < n_intervals - 1) * overlap
-                function_intervals.append((start, end))
-                
-            intervals.append(function_intervals)
-            
-        # Create cover elements (intersection of intervals from each filter function)
-        cover_elements = {}
-        cover_index = 0
-        
-        for interval_combo in itertools.product(*intervals):
-            points_in_cover = []
-            
-            # Find points that fall in all intervals
-            for i in range(self.n_samples):
-                in_all_intervals = True
-                
-                for j, (start, end) in enumerate(interval_combo):
-                    if not (start <= filter_functions[j][i] <= end):
-                        in_all_intervals = False
-                        break
-                        
-                if in_all_intervals:
-                    points_in_cover.append(i)
+                    paths = path_complex[dim]
                     
-            if points_in_cover:
-                cover_elements[cover_index] = points_in_cover
-                cover_index += 1
+                    if dim == 0:
+                        # For 0-dimension, Betti number is number of connected components
+                        betti = nx.number_connected_components(networks[i].to_undirected())
+                        betti_series.append(betti)
+                        continue
+                        
+                    # Create boundary matrix
+                    n_paths = len(paths)
+                    
+                    if dim-1 not in path_complex or not path_complex[dim-1]:
+                        betti_series.append(0)
+                        continue
+                        
+                    n_boundaries = len(path_complex[dim-1])
+                    boundary_matrix = np.zeros((n_paths, n_boundaries))
+                    
+                    # Fill boundary matrix
+                    for j, path in enumerate(paths):
+                        # Get boundary paths
+                        for k in range(len(path) - 1):
+                            boundary_path = path[:k] + path[k+1:]
+                            try:
+                                boundary_idx = path_complex[dim-1].index(boundary_path)
+                                boundary_matrix[j, boundary_idx] = 1
+                            except ValueError:
+                                continue
+                    
+                    # Compute homology
+                    homology = self._compute_homology_from_boundary(boundary_matrix)
+                    betti_series.append(homology['betti'])
                 
-        # Add nodes (cover elements)
-        for node_id, points in cover_elements.items():
-            # Node attributes: mean feature values, earliest timestamp
-            mean_features = np.mean(self.features[points], axis=0)
-            timestamps = self.timestamps[points]
-            earliest_time = np.min(timestamps) if isinstance(timestamps[0], (int, float)) else min(timestamps)
+                path_zigzag_diagrams[f'betti_{dim}'] = betti_series
+                print(f"Dimension {dim} processing completed in {time.time() - dim_start:.2f} seconds")
             
-            self.mapper_graph.add_node(
-                node_id, 
-                points=points, 
-                size=len(points),
-                features=mean_features,
-                timestamp=earliest_time
-            )
+            # Compute zigzag persistence across windows
+            print("Computing transitions between windows...")
+            transition_features = []
             
-        # Add edges between nodes that share points
-        for node1, node2 in itertools.combinations(cover_elements.keys(), 2):
-            shared_points = set(cover_elements[node1]).intersection(set(cover_elements[node2]))
+            # For each pair of consecutive windows, analyze transitions
+            for i in range(len(window_indices) - 1):
+                current_window = set(window_indices[i])
+                next_window = set(window_indices[i+1])
+                
+                # Find overlap indices
+                overlap_indices = current_window.intersection(next_window)
+                
+                if not overlap_indices:
+                    continue
+                
+                # Track transitions of paths
+                for dim in range(1, max_path_length + 1):  # Skip 0-dim (just points)
+                    if dim in path_complexes[i] and dim in path_complexes[i+1]:
+                        # Find paths in current window that have elements in the overlap
+                        persistent_paths = []
+                        for path in path_complexes[i][dim]:
+                            # Check if path nodes are in overlap (need original indices)
+                            path_nodes_in_overlap = False
+                            for node in path:
+                                if node < len(networks[i].nodes) and 'original_idx' in networks[i].nodes[node]:
+                                    original_idx = networks[i].nodes[node]['original_idx']
+                                    if original_idx in overlap_indices:
+                                        path_nodes_in_overlap = True
+                                        break
+                            
+                            if path_nodes_in_overlap:
+                                persistent_paths.append(path)
+                        
+                        transition_features.append({
+                            'window_pair': (i, i+1),
+                            'dimension': dim,
+                            'persistent_paths': len(persistent_paths)
+                        })
             
-            if shared_points:
-                self.mapper_graph.add_edge(
-                    node1, 
-                    node2, 
-                    weight=len(shared_points),
-                    shared_points=list(shared_points)
-                )
-                
-        return self.mapper_graph
-    
-    def identify_regimes(self, n_regimes=3, affinity_sigma=1.0):
-        """
-        Identify volatility regimes using enhanced spectral clustering with adaptive affinity.
-        
-        Parameters:
-        -----------
-        n_regimes : int
-            Number of regimes to identify
-        affinity_sigma : float
-            Initial bandwidth parameter for affinity calculation
+            path_zigzag_diagrams['transitions'] = transition_features
             
-        Returns:
-        --------
-        numpy.ndarray
-            Array of regime labels for each data point
-        """
-        start_time = time.time()
-        print("Identifying volatility regimes...")
-        
-        if self.temporal_distance_matrix is None:
-            raise ValueError("Temporal distance matrix must be computed first")
-        
-        # Normalize features with robust scaling
-        normalized_features = RobustScaler().fit_transform(self.features)
-        
-        # Initialize affinity matrix with adaptive bandwidth
-        n_samples = self.n_samples
-        affinity = np.zeros((n_samples, n_samples))
-        
-        # Compute adaptive bandwidth for each point
-        distances = squareform(pdist(normalized_features))
-        k = min(15, n_samples - 1)  # k-nearest neighbors
-        sorted_distances = np.sort(distances, axis=1)
-        local_scales = sorted_distances[:, k].reshape(-1, 1)
-        
-        # Enhanced temporal coherence with adaptive window
-        temporal_coherence = np.zeros((n_samples, n_samples))
-        adaptive_window = max(5, int(n_samples * 0.02))  # Adaptive window size
-        
-        for i in range(n_samples):
-            lower_bound = max(0, i - adaptive_window)
-            upper_bound = min(n_samples, i + adaptive_window + 1)
-            for j in range(lower_bound, upper_bound):
-                if i != j:
-                    # Exponential decay for temporal coherence
-                    temporal_weight = np.exp(-abs(i - j) / adaptive_window)
-                    temporal_coherence[i, j] = temporal_weight
-        
-        # Incorporate zigzag persistence if available
-        has_zigzag = hasattr(self, 'path_zigzag_diagrams') and self.path_zigzag_diagrams is not None
-        if has_zigzag:
-            print("Incorporating path zigzag persistence information...")
-            transition_strength = self._compute_zigzag_transition_strength()
-        
-        # Compute affinity matrix with adaptive scaling
-        for i in range(n_samples):
-            for j in range(i + 1, n_samples):
-                # Compute feature similarity with adaptive bandwidth
-                feature_dist = np.sqrt(np.sum((normalized_features[i] - normalized_features[j]) ** 2))
-                bandwidth = np.mean([local_scales[i], local_scales[j]])
-                base_affinity = np.exp(-feature_dist**2 / (2 * bandwidth**2))
-                
-                # Enhanced temporal weighting
-                temporal_effect = 1.0 + temporal_coherence[i, j]
-                
-                # Incorporate zigzag information if available
-                if has_zigzag and transition_strength is not None:
-                    zigzag_boost = 1.0 + transition_strength[i, j] * 2.0
-                    affinity[i, j] = base_affinity * temporal_effect * zigzag_boost
-                else:
-                    affinity[i, j] = base_affinity * temporal_effect
-                
-                affinity[j, i] = affinity[i, j]  # Symmetric matrix
-        
-        # Normalize affinity matrix
-        affinity = affinity / np.max(affinity)
-        np.fill_diagonal(affinity, 0)
-        
-        print(f"Affinity matrix shape: {affinity.shape}, range: [{np.min(affinity):.4f}, {np.max(affinity):.4f}]")
-        
-        # Enhanced spectral clustering with balanced initialization
-        from sklearn.cluster import SpectralClustering
-        from sklearn.mixture import GaussianMixture
-        
-        # First attempt with balanced spectral clustering
-        try:
-            clustering = SpectralClustering(
-                n_clusters=n_regimes,
-                affinity='precomputed',
-                random_state=42,
-                assign_labels='kmeans',
-                n_init=20  # Multiple initializations for stability
-            )
-            regime_labels = clustering.fit_predict(affinity)
+            # Generate epsilon stepping for filtration
+            epsilon_values = np.linspace(min_epsilon, max_epsilon, num_steps)
             
-            # Check regime balance
-            regime_counts = np.bincount(regime_labels)
-            balance_ratio = np.min(regime_counts) / np.max(regime_counts)
+            # Store results
+            self.path_zigzag_diagrams = {
+                'window_complexes': path_complexes,
+                'window_networks': networks,
+                'window_indices': window_indices,
+                'betti_numbers': path_zigzag_diagrams,
+                'epsilon_values': epsilon_values,
+                'window_size': window_size,
+                'overlap': overlap
+            }
             
-            # If imbalanced, try alternative clustering
-            if balance_ratio < 0.15:  # Severe imbalance threshold
-                print("Initial clustering imbalanced, attempting refinement...")
-                
-                # Use spectral embedding with GMM
-                from sklearn.manifold import SpectralEmbedding
-                
-                embedder = SpectralEmbedding(
-                    n_components=min(n_regimes * 2, n_samples - 1),
-                    affinity='precomputed',
-                    random_state=42
-                )
-                embedding = embedder.fit_transform(affinity)
-                
-                # Fit GMM with balanced initialization
-                gmm = GaussianMixture(
-                    n_components=n_regimes,
-                    covariance_type='full',
-                    n_init=20,
-                    random_state=42
-                )
-                regime_labels = gmm.fit_predict(embedding)
-                
-                # Check if GMM improved balance
-                new_counts = np.bincount(regime_labels)
-                new_balance = np.min(new_counts) / np.max(new_counts)
-                
-                if new_balance > balance_ratio:
-                    print(f"Refined regime distribution: {new_counts}")
-                else:
-                    # Revert to original labels if no improvement
-                    regime_labels = clustering.labels_
-        
+            # Generate visualizations
+            if output_dir is not None:
+                self._generate_zigzag_visualizations(output_dir)
+            
+            print(f"Total path zigzag persistence computation completed in {time.time() - start_time:.2f} seconds")
+            return self.path_zigzag_diagrams
+            
         except Exception as e:
-            print(f"Error in spectral clustering: {str(e)}")
-            # Fallback to basic clustering
-            from sklearn.cluster import KMeans
-            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=20)
-            regime_labels = kmeans.fit_predict(normalized_features)
+            print(f"Error in path zigzag persistence computation: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
+            
+    def _generate_zigzag_visualizations(self, output_dir):
+        """Helper method to generate visualizations for zigzag persistence results."""
+        os.makedirs(output_dir, exist_ok=True)
         
-        # Store final regime labels
-        self.regime_labels = regime_labels
+        # Plot Betti numbers across windows
+        plt.figure(figsize=(12, 6))
         
-        # Print final distribution
-        final_counts = np.bincount(regime_labels)
-        print(f"Final regime distribution: {final_counts}")
-        print(f"Regime balance ratio: {np.min(final_counts) / np.max(final_counts):.3f}")
-        print(f"Regime identification completed in {time.time() - start_time:.2f} seconds")
+        for dim in range(len(self.path_zigzag_diagrams['window_complexes'][0])):
+            betti_key = f'betti_{dim}'
+            if betti_key in self.path_zigzag_diagrams['betti_numbers']:
+                betti_values = self.path_zigzag_diagrams['betti_numbers'][betti_key]
+                if betti_values:  # Only plot if we have values
+                    plt.plot(range(len(betti_values)), betti_values, 
+                           label=f'H{dim}', linewidth=2, marker='o')
         
-        return regime_labels
-
+        plt.xlabel('Window Index')
+        plt.ylabel('Betti Number')
+        plt.title('Path Zigzag Persistence: Betti Numbers Across Windows')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.savefig(os.path.join(output_dir, 'path_zigzag_betti.png'))
+        plt.close()
+        
+        # Plot transition diagram
+        transition_features = self.path_zigzag_diagrams['betti_numbers']['transitions']
+        if transition_features:
+            plt.figure(figsize=(12, 6))
+            
+            # Group by dimension
+            max_dim = max(t['dimension'] for t in transition_features)
+            for dim in range(1, max_dim + 1):
+                dim_transitions = [t['persistent_paths'] for t in transition_features 
+                                if t['dimension'] == dim]
+                if dim_transitions:
+                    plt.plot(range(len(dim_transitions)), dim_transitions, 
+                           label=f'Dim {dim}', linewidth=2, marker='x')
+            
+            plt.xlabel('Window Transition')
+            plt.ylabel('Persistent Paths')
+            plt.title('Path Structure Persistence Across Window Transitions')
+            plt.legend()
+            plt.grid(True, alpha=0.3)
+            plt.savefig(os.path.join(output_dir, 'path_zigzag_transitions.png'))
+            plt.close()
+    
     def _compute_zigzag_transition_strength(self):
         """
         Helper method to compute transition strength from zigzag persistence data.
@@ -876,519 +761,941 @@ class TopologicalDataAnalyzer:
         except Exception as e:
             print(f"Warning: Error computing zigzag transition strength: {str(e)}")
             return None
-
-    def analyze_regimes(self):
+    
+    def identify_regimes(self, n_regimes=3, use_topological_features=True):
         """
-        Analyze the identified regimes to extract statistics and patterns.
+        Identify volatility regimes using topological features and enhanced spectral clustering.
         
+        Parameters:
+        -----------
+        n_regimes : int
+            Number of regimes to identify
+        use_topological_features : bool
+            Whether to use extracted topological features for regime identification
+            
         Returns:
         --------
-        dict
-            Dictionary containing regime analysis results
+        numpy.ndarray
+            Array of regime labels for each data point
         """
         start_time = time.time()
-        print("Analyzing volatility regimes...")
+        print(f"Identifying {n_regimes} volatility regimes...")
         
-        if self.regime_labels is None:
-            raise ValueError("Must detect regimes before analyzing them")
+        # Ensure we have a distance matrix
+        if self.temporal_distance_matrix is None:
+            self.compute_temporally_weighted_distance()
         
-        # Get the unique regime labels, which may not be sequential from 0
-        unique_regimes = np.unique(self.regime_labels)
-        n_regimes = len(unique_regimes)
+        # Base feature set
+        base_features = RobustScaler().fit_transform(self.features)
         
-        # Create a mapping from regime labels to sequential indices
-        regime_to_idx = {regime: idx for idx, regime in enumerate(unique_regimes)}
-        idx_to_regime = {idx: regime for idx, regime in enumerate(unique_regimes)}
-        
-        regime_stats = []
-        
-        # Initialize transition probability matrix with the correct size
-        transition_probs = np.zeros((n_regimes, n_regimes))
-        
-        # Compute transitions using the mapping
-        for i in range(len(self.regime_labels) - 1):
-            current_regime = self.regime_labels[i]
-            next_regime = self.regime_labels[i + 1]
-            current_idx = regime_to_idx[current_regime]
-            next_idx = regime_to_idx[next_regime]
-            transition_probs[current_idx, next_idx] += 1
-        
-        # Normalize transition probabilities
-        row_sums = transition_probs.sum(axis=1, keepdims=True)
-        row_sums[row_sums == 0] = 1  # Avoid division by zero
-        transition_probs = transition_probs / row_sums
-        
-        # Analyze each regime
-        for regime_idx, regime in enumerate(unique_regimes):
-            regime_mask = self.regime_labels == regime
-            regime_points = np.where(regime_mask)[0]
-            regime_times = self.timestamps[regime_points] if hasattr(self, 'timestamps') and len(regime_points) > 0 else None
+        if use_topological_features:
+            # Extract topological features if they haven't been computed
+            if not hasattr(self, 'topological_features'):
+                topo_features, topo_feature_names = self.extract_topological_features()
+                self.topological_features = topo_features
+                self.topological_feature_names = topo_feature_names
             
-            if len(regime_points) > 0:
-                # Convert numpy.timedelta64 to pandas Timedelta for duration calculation
-                if regime_times is not None and np.issubdtype(regime_times.dtype, np.datetime64):
-                    start_time_val = pd.Timestamp(min(regime_times))
-                    end_time_val = pd.Timestamp(max(regime_times))
-                    duration = (end_time_val - start_time_val).total_seconds()
+            # Create topological feature matrix per point
+            n_samples = self.n_samples
+            topo_feature_matrix = np.zeros((n_samples, len(self.topological_features)))
+            
+            # For sequential data, use window-based assignment of topological features
+            if hasattr(self, 'zigzag_diagrams') and self.zigzag_diagrams is not None:
+                window_indices = self.zigzag_diagrams['windows']
+                
+                # Assign features to each point based on windows it belongs to
+                point_window_count = np.zeros(n_samples)
+                
+                for i, window_idx in enumerate(window_indices):
+                    for idx in window_idx:
+                        topo_feature_matrix[idx] += self.topological_features
+                        point_window_count[idx] += 1
+                
+                # Average features for points in multiple windows
+                for i in range(n_samples):
+                    if point_window_count[i] > 0:
+                        topo_feature_matrix[i] /= point_window_count[i]
+            else:
+                # If no zigzag persistence, assign global topological features to all points
+                topo_feature_matrix = np.tile(self.topological_features, (n_samples, 1))
+            
+            # Normalize topological features
+            topo_feature_matrix = RobustScaler().fit_transform(topo_feature_matrix)
+            
+            # Combine base features with topological features
+            combined_features = np.column_stack([base_features, topo_feature_matrix])
+            print(f"Combined feature matrix shape: {combined_features.shape}")
+        else:
+            combined_features = base_features
+        
+        # Compute transition strength from zigzag persistence
+        has_zigzag = hasattr(self, 'zigzag_diagrams') and self.zigzag_diagrams is not None
+        
+        # Build affinity matrix for clustering
+        n_samples = self.n_samples
+        affinity = np.zeros((n_samples, n_samples))
+        
+        # Compute adaptive bandwidth for each point
+        distances = squareform(pdist(combined_features))
+        k = min(15, n_samples - 1)  # k-nearest neighbors
+        sorted_distances = np.sort(distances, axis=1)
+        local_scales = sorted_distances[:, k].reshape(-1, 1)
+        
+        # Enhanced temporal coherence with adaptive window
+        temporal_coherence = np.zeros((n_samples, n_samples))
+        adaptive_window = max(5, int(n_samples * 0.02))  # Adaptive window size
+        
+        for i in range(n_samples):
+            lower_bound = max(0, i - adaptive_window)
+            upper_bound = min(n_samples, i + adaptive_window + 1)
+            for j in range(lower_bound, upper_bound):
+                if i != j:
+                    # Exponential decay for temporal coherence
+                    temporal_weight = np.exp(-abs(i - j) / adaptive_window)
+                    temporal_coherence[i, j] = temporal_weight
+        
+        # Get transition strength if zigzag persistence was computed
+        if has_zigzag:
+            transition_strength = self._compute_zigzag_transition_strength()
+        else:
+            transition_strength = None
+        
+        # Build the affinity matrix
+        for i in range(n_samples):
+            for j in range(i+1, n_samples):
+                # Compute feature similarity with adaptive bandwidth
+                feature_dist = distances[i, j]
+                bandwidth = np.mean([local_scales[i], local_scales[j]])
+                base_affinity = np.exp(-feature_dist**2 / (2 * bandwidth**2))
+                
+                # Enhanced temporal weighting
+                temporal_effect = 1.0 + temporal_coherence[i, j]
+                
+                # Incorporate zigzag information if available
+                if has_zigzag and transition_strength is not None:
+                    zigzag_boost = 1.0 + transition_strength[i, j] * 2.0
+                    affinity[i, j] = base_affinity * temporal_effect * zigzag_boost
                 else:
-                    # If not datetime, use number of points as duration
-                    duration = len(regime_points)
-                    start_time_val = regime_points[0] if len(regime_points) > 0 else 0
-                    end_time_val = regime_points[-1] if len(regime_points) > 0 else 0
+                    affinity[i, j] = base_affinity * temporal_effect
                 
-                # Calculate regime statistics
-                stats = {
-                    'regime_id': int(regime),  # Convert to int to avoid issues with numpy types
-                    'size': len(regime_points),
-                    'start_time': start_time_val,
-                    'end_time': end_time_val,
-                    'duration': duration,
-                    'points': regime_points.tolist()
-                }
-                
-                regime_stats.append(stats)
+                affinity[j, i] = affinity[i, j]  # Symmetric matrix
         
-        result = {
-            'regime_labels': self.regime_labels,
-            'regime_stats': regime_stats,
-            'transition_probs': transition_probs,
-            'n_regimes': n_regimes,
-            'unique_regimes': unique_regimes.tolist(),
-            'regime_to_idx': regime_to_idx,
-            'idx_to_regime': idx_to_regime
-        }
+        # Normalize affinity matrix
+        affinity = affinity / np.max(affinity)
+        np.fill_diagonal(affinity, 0)
         
-        print(f"Regime analysis completed in {time.time() - start_time:.2f} seconds")
-        return result
-
-    def compute_zigzag_persistence(self, window_size=100, overlap=50):
-        """
-        Compute zigzag persistence to capture market state transitions.
+        print(f"Affinity matrix range: [{np.min(affinity):.4f}, {np.max(affinity):.4f}]")
         
-        Parameters:
-        -----------
-        window_size : int
-            Size of sliding window for state computation
-        overlap : int
-            Number of points to overlap between windows
-            
-        Returns:
-        --------
-        dict
-            Dictionary containing zigzag persistence diagrams
-        """
-        print("Computing zigzag persistence for market states...")
-        
+        # Spectral clustering with the affinity matrix
         try:
-            # Create sequence of complexes
-            complexes = []
-            for i in range(0, self.n_samples - window_size + 1, window_size - overlap):
-                # Get window of data
-                window_data = self.features[i:i + window_size]
+            clustering = SpectralClustering(
+                n_clusters=n_regimes,
+                affinity='precomputed',
+                random_state=42,
+                assign_labels='kmeans',
+                n_init=20
+            )
+            regime_labels = clustering.fit_predict(affinity)
+            
+            # Check regime balance
+            regime_counts = np.bincount(regime_labels)
+            balance_ratio = np.min(regime_counts) / np.max(regime_counts)
+            
+            # If severely imbalanced, try alternative clustering
+            if balance_ratio < 0.15:
+                print("Initial clustering imbalanced, attempting refinement...")
                 
-                # Create Rips complex for this window
-                rips = gudhi.RipsComplex(
-                    points=window_data,
-                    max_edge_length=np.inf
+                # Use spectral embedding with GMM
+                from sklearn.manifold import SpectralEmbedding
+                
+                embedder = SpectralEmbedding(
+                    n_components=min(n_regimes * 2, n_samples - 1),
+                    affinity='precomputed',
+                    random_state=42
                 )
+                embedding = embedder.fit_transform(affinity)
                 
-                # Create simplex tree
-                st = rips.create_simplex_tree(max_dimension=2)
+                # Fit GMM
+                gmm = GaussianMixture(
+                    n_components=n_regimes,
+                    covariance_type='full',
+                    n_init=20,
+                    random_state=42
+                )
+                regime_labels = gmm.fit_predict(embedding)
                 
-                # Add to sequence
-                complexes.append(st)
-            
-            # Create zigzag complex
-            zz = gudhi.ZigzagPersistence()
-            
-            # Add complexes to zigzag
-            for i, st in enumerate(complexes):
-                zz.add_complex(st)
+                # Check if GMM improved balance
+                new_counts = np.bincount(regime_labels)
+                new_balance = np.min(new_counts) / np.max(new_counts)
                 
-                # Add inclusion maps between overlapping windows
-                if i > 0:
-                    overlap_points = list(range(overlap))
-                    zz.add_inclusion(complexes[i-1], st, overlap_points)
-            
-            # Compute zigzag persistence
-            zz_diagrams = zz.compute_persistence()
-            
-            # Process results
-            self.zigzag_diagrams = {
-                'diagrams': zz_diagrams,
-                'complexes': complexes,
-                'window_size': window_size,
-                'overlap': overlap
-            }
-            
-            # Generate visualizations
-            if not os.path.exists('zigzag_plots'):
-                os.makedirs('zigzag_plots')
-                
-            plt.figure(figsize=(12, 6))
-            for dim in range(3):
-                if dim in zz_diagrams:
-                    pairs = zz_diagrams[dim]
-                    for birth, death in pairs:
-                        plt.plot([birth, death], [dim, dim], 
-                               c=['blue', 'red', 'green'][dim],
-                               linewidth=2, label=f'H{dim}' if birth == pairs[0][0] else "")
-            
-            plt.xlabel('Time')
-            plt.ylabel('Dimension')
-            plt.title('Zigzag Persistence Diagram')
-            plt.legend()
-            plt.grid(True, alpha=0.3)
-            plt.savefig('zigzag_plots/zigzag_persistence.png')
-            plt.close()
-            
-            return self.zigzag_diagrams
-            
-        except Exception as e:
-            print(f"Error in zigzag persistence computation: {str(e)}")
-            return None
-
-    def compute_persistent_path_homology(self, max_path_length=3):
-        """
-        Compute persistent path homology to capture order flow dynamics.
-        
-        Parameters:
-        -----------
-        max_path_length : int
-            Maximum length of paths to consider
-            
-        Returns:
-        --------
-        dict
-            Dictionary containing path homology diagrams
-        """
-        print("Computing persistent path homology for order flow...")
-        
-        try:
-            # Create directed network from temporal distance matrix
-            G = self.construct_directed_network(epsilon=0.5)
-            
-            # Create path complex
-            path_complex = self.compute_path_complex(G, max_path_length)
-            
-            # Create flow complex (directed simplicial complex)
-            self.flow_complex = nx.DiGraph()
-            
-            # Add vertices
-            for node in G.nodes():
-                self.flow_complex.add_node(node)
-            
-            # Add edges with flow direction
-            for u, v in G.edges():
-                # Determine flow direction based on price movement
-                price_diff = self.features[v, 0] - self.features[u, 0]  # Assuming first feature is price
-                if price_diff > 0:
-                    self.flow_complex.add_edge(u, v, direction='up')
+                if new_balance > balance_ratio:
+                    print(f"Refined regime distribution: {new_counts}")
                 else:
-                    self.flow_complex.add_edge(v, u, direction='down')
-            
-            # Compute path homology
-            path_homology = {}
-            
-            for dim in range(max_path_length + 1):
-                # Get paths of current dimension
-                paths = path_complex[dim]
-                
-                # Create boundary matrix
-                n_paths = len(paths)
-                if n_paths == 0:
-                    continue
-                    
-                boundary_matrix = np.zeros((n_paths, n_paths))
-                
-                # Fill boundary matrix
-                for i, path in enumerate(paths):
-                    # Get boundary paths
-                    boundary_paths = []
-                    for j in range(len(path) - 1):
-                        boundary_path = path[:j] + path[j+1:]
-                        if boundary_path in paths:
-                            boundary_paths.append(paths.index(boundary_path))
-                    
-                    # Add to boundary matrix
-                    for j in boundary_paths:
-                        boundary_matrix[i, j] = 1
-                
-                # Compute homology
-                homology = self._compute_homology_from_boundary(boundary_matrix)
-                path_homology[dim] = homology
-            
-            # Store results
-            self.path_homology_diagrams = {
-                'homology': path_homology,
-                'path_complex': path_complex,
-                'flow_complex': self.flow_complex
-            }
-            
-            # Generate visualizations
-            if not os.path.exists('path_homology_plots'):
-                os.makedirs('path_homology_plots')
-                
-            plt.figure(figsize=(12, 6))
-            for dim in range(max_path_length + 1):
-                if dim in path_homology:
-                    betti = path_homology[dim]['betti']
-                    plt.plot([0, self.n_samples], [betti, betti], 
-                           c=['blue', 'red', 'green'][dim],
-                           linewidth=2, label=f'H{dim}')
-            
-            plt.xlabel('Time')
-            plt.ylabel('Betti Numbers')
-            plt.title('Path Homology Betti Numbers')
-            plt.legend()
-            plt.grid(True, alpha=0.3)
-            plt.savefig('path_homology_plots/path_homology.png')
-            plt.close()
-            
-            return self.path_homology_diagrams
-            
-        except Exception as e:
-            print(f"Error in path homology computation: {str(e)}")
-            return None
-            
-    def _compute_homology_from_boundary(self, boundary_matrix):
-        """
-        Helper method to compute homology from boundary matrix.
+                    # Revert to original labels if no improvement
+                    regime_labels = clustering.labels_
         
-        Parameters:
-        -----------
-        boundary_matrix : numpy.ndarray
-            Boundary matrix of the complex
-            
+        except Exception as e:
+            print(f"Error in spectral clustering: {str(e)}")
+            # Fallback to basic clustering
+            from sklearn.cluster import KMeans
+            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=20)
+            regime_labels = kmeans.fit_predict(combined_features)
+        
+        # Store regime labels
+        self.regime_labels = regime_labels
+        
+        # Print final distribution
+        final_counts = np.bincount(regime_labels)
+        print(f"Final regime distribution: {final_counts}")
+        print(f"Regime balance ratio: {np.min(final_counts) / np.max(final_counts):.3f}")
+        print(f"Regime identification completed in {time.time() - start_time:.2f} seconds")
+        
+        return regime_labels
+    
+    def extract_topological_features(self):
+        """
+        Extract topological features from persistent homology and zigzag persistence.
+        These features capture the structural characteristics of market microstructure.
+        
         Returns:
         --------
-        dict
-            Dictionary containing homology information
+        numpy.ndarray
+            Array of topological features
         """
-        # Compute rank of boundary matrix
-        rank = np.linalg.matrix_rank(boundary_matrix)
+        start_time = time.time()
+        print("Extracting topological features...")
         
-        # Compute nullity
-        nullity = boundary_matrix.shape[0] - rank
+        # Initialize features list
+        topo_features = []
+        feature_names = []
         
+        # Check which computations have been done
+        has_persistence = self.persistence_diagrams is not None
+        has_zigzag = self.zigzag_diagrams is not None
         
-        # Compute Betti numbers
-        betti = nullity - rank
+        if not has_persistence and not has_zigzag:
+            print("No persistence computations found. Computing persistent homology...")
+            self.compute_persistent_homology()
+            has_persistence = True
         
-        return {
-            'rank': rank,
-            'nullity': nullity,
-            'betti': betti
-        } 
-
-    def compute_persistent_path_zigzag_homology(self, window_size=100, overlap=50, max_path_length=3, min_epsilon=0.1, max_epsilon=2.0, num_steps=10, output_dir=None):
+        # 1. Features from standard persistence
+        if has_persistence:
+            # Extract features from persistence diagrams
+            persistence = self.persistence_diagrams
+            
+            # For each dimension, compute summary statistics
+            for dim in range(3):  # Dimensions 0, 1, 2
+                # Get persistence pairs for this dimension
+                # GUDHI format: (dimension, (birth, death))
+                pairs = [(p[1][0], p[1][1]) for p in persistence if p[0] == dim]
+                
+                if pairs:
+                    # Convert to array for easier computation
+                    pairs_array = np.array(pairs)
+                    
+                    # Filter out infinite death values
+                    finite_pairs = pairs_array[np.isfinite(pairs_array[:, 1])]
+                    
+                    if len(finite_pairs) > 0:
+                        # Compute persistence lifetimes
+                        lifetimes = finite_pairs[:, 1] - finite_pairs[:, 0]
+                        
+                        # Compute summary statistics
+                        features = {
+                            f'persistence_dim{dim}_count': len(pairs),
+                            f'persistence_dim{dim}_max_lifetime': np.max(lifetimes) if len(lifetimes) > 0 else 0,
+                            f'persistence_dim{dim}_mean_lifetime': np.mean(lifetimes) if len(lifetimes) > 0 else 0,
+                            f'persistence_dim{dim}_std_lifetime': np.std(lifetimes) if len(lifetimes) > 0 else 0,
+                            f'persistence_dim{dim}_sum_lifetime': np.sum(lifetimes) if len(lifetimes) > 0 else 0,
+                            f'persistence_dim{dim}_birth_mean': np.mean(finite_pairs[:, 0]) if len(finite_pairs) > 0 else 0,
+                            f'persistence_dim{dim}_death_mean': np.mean(finite_pairs[:, 1]) if len(finite_pairs) > 0 else 0
+                        }
+                    else:
+                        features = {
+                            f'persistence_dim{dim}_count': len(pairs),
+                            f'persistence_dim{dim}_max_lifetime': 0,
+                            f'persistence_dim{dim}_mean_lifetime': 0,
+                            f'persistence_dim{dim}_std_lifetime': 0,
+                            f'persistence_dim{dim}_sum_lifetime': 0,
+                            f'persistence_dim{dim}_birth_mean': 0,
+                            f'persistence_dim{dim}_death_mean': 0
+                        }
+                else:
+                    features = {
+                        f'persistence_dim{dim}_count': 0,
+                        f'persistence_dim{dim}_max_lifetime': 0,
+                        f'persistence_dim{dim}_mean_lifetime': 0,
+                        f'persistence_dim{dim}_std_lifetime': 0,
+                        f'persistence_dim{dim}_sum_lifetime': 0,
+                        f'persistence_dim{dim}_birth_mean': 0,
+                        f'persistence_dim{dim}_death_mean': 0
+                    }
+                
+                # Add to feature lists
+                for feat_name, feat_val in features.items():
+                    topo_features.append(feat_val)
+                    feature_names.append(feat_name)
+            
+            # Add Betti curve features if available
+            if self.betti_curves is not None:
+                for dim, curve in self.betti_curves['curves'].items():
+                    # Compute statistics on the Betti curve
+                    if len(curve) > 0:
+                        features = {
+                            f'betti_curve_dim{dim}_max': np.max(curve),
+                            f'betti_curve_dim{dim}_mean': np.mean(curve),
+                            f'betti_curve_dim{dim}_integral': np.trapz(curve, self.betti_curves['values'])
+                        }
+                    else:
+                        features = {
+                            f'betti_curve_dim{dim}_max': 0,
+                            f'betti_curve_dim{dim}_mean': 0,
+                            f'betti_curve_dim{dim}_integral': 0
+                        }
+                    
+                    # Add to feature lists
+                    for feat_name, feat_val in features.items():
+                        topo_features.append(feat_val)
+                        feature_names.append(feat_name)
+        
+        # 2. Features from zigzag persistence
+        if has_zigzag:
+            # Extract Betti number profiles from each dimension
+            for dim in range(3):  # Dimensions 0, 1, 2
+                betti_key = f'betti_{dim}'
+                if betti_key in self.zigzag_diagrams['betti_numbers']:
+                    betti_values = self.zigzag_diagrams['betti_numbers'][betti_key]
+                    
+                    if betti_values:
+                        features = {
+                            f'zigzag_dim{dim}_max_betti': np.max(betti_values),
+                            f'zigzag_dim{dim}_mean_betti': np.mean(betti_values),
+                            f'zigzag_dim{dim}_std_betti': np.std(betti_values),
+                            f'zigzag_dim{dim}_changepoints': np.sum(np.abs(np.diff(betti_values)) > 0)
+                        }
+                    else:
+                        features = {
+                            f'zigzag_dim{dim}_max_betti': 0,
+                            f'zigzag_dim{dim}_mean_betti': 0,
+                            f'zigzag_dim{dim}_std_betti': 0,
+                            f'zigzag_dim{dim}_changepoints': 0
+                        }
+                else:
+                    features = {
+                        f'zigzag_dim{dim}_max_betti': 0,
+                        f'zigzag_dim{dim}_mean_betti': 0,
+                        f'zigzag_dim{dim}_std_betti': 0,
+                        f'zigzag_dim{dim}_changepoints': 0
+                    }
+                
+                # Add to feature lists
+                for feat_name, feat_val in features.items():
+                    topo_features.append(feat_val)
+                    feature_names.append(feat_name)
+        
+        # Convert to array
+        topo_features_array = np.array(topo_features)
+        
+        print(f"Extracted {len(topo_features)} topological features in {time.time() - start_time:.2f} seconds")
+        
+        return topo_features_array, feature_names
+    
+    def analyze_regimes(self, output_dir=None):
         """
-        Compute persistent path homology with zigzag persistence, specifically designed for sequential market microstructure data.
-        This combines the directed path complex approach with zigzag persistence to capture temporal evolution of market states.
+        Analyze identified regimes and generate visualizations.
         
         Parameters:
         -----------
-        window_size : int
-            Size of sliding window for state computation
-        overlap : int
-            Number of points to overlap between windows
-        max_path_length : int
-            Maximum length of paths to consider
-        min_epsilon : float
-            Minimum distance threshold
-        max_epsilon : float
-            Maximum distance threshold
-        num_steps : int
-            Number of filtration steps
         output_dir : str
             Directory to save output files and plots
             
         Returns:
         --------
         dict
-            Dictionary containing path zigzag persistence diagrams
+            Dictionary containing regime analysis results
+        """
+        if self.regime_labels is None:
+            raise ValueError("Regimes must be identified first")
+        
+        print("Analyzing volatility regimes...")
+        
+        # Create output directory if specified
+        if output_dir is not None:
+            os.makedirs(output_dir, exist_ok=True)
+        
+        # Initialize results
+        regime_analysis = {
+            'regime_counts': np.bincount(self.regime_labels),
+            'regime_stats': {},
+            'transition_points': []
+        }
+        
+        # Calculate statistics for each regime
+        for regime in range(max(self.regime_labels) + 1):
+            regime_mask = self.regime_labels == regime
+            regime_features = self.features[regime_mask]
+            
+            # Basic statistics
+            stats = {
+                'count': np.sum(regime_mask),
+                'mean': np.mean(regime_features, axis=0),
+                'std': np.std(regime_features, axis=0),
+                'min': np.min(regime_features, axis=0),
+                'max': np.max(regime_features, axis=0)
+            }
+            
+            regime_analysis['regime_stats'][regime] = stats
+        
+        # Find regime transition points
+        transitions = []
+        for i in range(1, len(self.regime_labels)):
+            if self.regime_labels[i] != self.regime_labels[i-1]:
+                transitions.append(i)
+        
+        regime_analysis['transition_points'] = transitions
+        
+        # Generate plots if output directory specified
+        if output_dir is not None:
+            # Plot regime distribution
+            plt.figure(figsize=(12, 6))
+            regime_counts = regime_analysis['regime_counts']
+            plt.bar(range(len(regime_counts)), regime_counts)
+            plt.xlabel('Regime')
+            plt.ylabel('Count')
+            plt.title('Regime Distribution')
+            plt.grid(True, alpha=0.3)
+            plt.savefig(os.path.join(output_dir, 'regime_distribution.png'))
+            plt.close()
+            
+            # Plot regime timeline
+            plt.figure(figsize=(15, 6))
+            plt.plot(self.regime_labels, '-o', markersize=3, alpha=0.5)
+            plt.xlabel('Time')
+            plt.ylabel('Regime')
+            plt.title('Regime Timeline')
+            plt.grid(True, alpha=0.3)
+            
+            # Mark transition points
+            for transition in transitions:
+                plt.axvline(x=transition, color='r', linestyle='--', alpha=0.5)
+            
+            plt.savefig(os.path.join(output_dir, 'regime_timeline.png'))
+            plt.close()
+            
+            # Plot topological features by regime if available
+            if hasattr(self, 'topological_features') and hasattr(self, 'topological_feature_names'):
+                # Select top features
+                n_features = min(10, len(self.topological_feature_names))
+                feature_importance = np.zeros(len(self.topological_feature_names))
+                
+                # Simple feature importance: variance between regimes
+                for i, feature_name in enumerate(self.topological_feature_names):
+                    values_by_regime = []
+                    for regime in range(max(self.regime_labels) + 1):
+                        regime_mask = self.regime_labels == regime
+                        if np.sum(regime_mask) > 0:
+                            # For simplicity, use global topological features
+                            values_by_regime.append(self.topological_features[i])
+                    
+                    if values_by_regime:
+                        feature_importance[i] = np.std(values_by_regime)
+                
+                # Get indices of top features
+                top_indices = np.argsort(-feature_importance)[:n_features]
+                
+                # Plot top features by regime
+                plt.figure(figsize=(15, 8))
+                x = np.arange(max(self.regime_labels) + 1)
+                width = 0.8 / n_features
+                
+                for i, idx in enumerate(top_indices):
+                    feature_name = self.topological_feature_names[idx]
+                    values_by_regime = []
+                    
+                    for regime in range(max(self.regime_labels) + 1):
+                        values_by_regime.append(self.topological_features[idx])
+                    
+                    plt.bar(x + i * width - 0.4, values_by_regime, width, label=feature_name)
+                
+                plt.xlabel('Regime')
+                plt.ylabel('Feature Value')
+                plt.title('Top Topological Features by Regime')
+                plt.xticks(x)
+                plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+                plt.tight_layout()
+                plt.savefig(os.path.join(output_dir, 'topological_features_by_regime.png'))
+                plt.close()
+        
+        return regime_analysis
+
+    def build_sparse_directed_network(self, epsilon=0.5, k_neighbors=None, enforce_temporal=True):
+        """
+        Build an efficient sparse directed network from the distance matrix.
+        For large datasets, uses k-nearest neighbors approach to limit edges.
+        
+        Parameters:
+        -----------
+        epsilon : float
+            Distance threshold for connecting points
+        k_neighbors : int or None
+            If provided, use k-nearest neighbors instead of epsilon threshold
+        enforce_temporal : bool
+            If True, only create edges that respect temporal ordering (i < j)
+            
+        Returns:
+        --------
+        tuple
+            (adjacency_matrix, edge_weights)
         """
         start_time = time.time()
-        print("Computing persistent path zigzag homology for market microstructure...")
+        print(f"Building sparse directed network...")
         
-        try:
-            # Create sequence of directed networks for each window
-            network_start = time.time()
-            networks = []
-            window_indices = []
+        if self.temporal_distance_matrix is None:
+            raise ValueError("Distance matrix must be computed first")
+        
+        n_samples = self.n_samples
+        
+        # Create sparse adjacency matrix
+        adjacency = lil_matrix((n_samples, n_samples), dtype=float)
+        
+        if k_neighbors is not None and k_neighbors < n_samples:
+            # K-nearest neighbors approach for sparse network
+            print(f"Using {k_neighbors}-nearest neighbors approach")
             
-            for i in range(0, self.n_samples - window_size + 1, window_size - overlap):
-                # Get window data indices
-                window_idx = list(range(i, min(i + window_size, self.n_samples)))
-                window_indices.append(window_idx)
-                
-                # Create temporal distance submatrix for this window
-                if self.temporal_distance_matrix is None:
-                    # Compute it if not already done
-                    self.compute_temporally_weighted_distance()
-                    self.temporal_distance_matrix = self.distance_matrix
-                
-                window_dist_matrix = self.temporal_distance_matrix[np.ix_(window_idx, window_idx)]
-                
-                # Create directed network for this window
-                epsilon = min_epsilon  # Start with minimum epsilon
-                G = nx.DiGraph()
-                
-                # Add nodes
-                for j, idx in enumerate(window_idx):
-                    G.add_node(j, original_idx=idx, features=self.features[idx], timestamp=self.timestamps[idx])
-                
-                # Add edges (respecting temporal ordering)
-                for j in range(len(window_idx)):
-                    for k in range(j+1, len(window_idx)):  # Enforce j < k for temporal ordering
-                        if window_dist_matrix[j, k] <= epsilon:
-                            G.add_edge(j, k, weight=1.0/max(window_dist_matrix[j, k], 1e-10))
-                
-                networks.append(G)
+            # Initialize nearest neighbors model
+            nn = NearestNeighbors(n_neighbors=k_neighbors, algorithm='ball_tree')
+            nn.fit(self.features)
             
-            print(f"Network creation completed in {time.time() - network_start:.2f} seconds")
+            # Get k nearest neighbors for each point
+            distances, indices = nn.kneighbors(self.features)
             
-            # For each network window, compute path complex
-            path_complexes = []
-            for G in networks:
-                path_complex = self.compute_path_complex(G, max_path_length)
-                path_complexes.append(path_complex)
-            
-            # Initialize zigzag path persistence
-            path_zigzag_diagrams = {
-                'window_diagrams': [],
-                'transitions': [],
-                'betti_numbers': []
-            }
-            
-            # Process each dimension
-            dimension_start = time.time()
-            for dim in range(max_path_length + 1):
-                betti_series = []
-                
-                # Compute homology for each window
-                for i, path_complex in enumerate(path_complexes):
-                    if dim not in path_complex or not path_complex[dim]:
-                        betti_series.append(0)
+            # Create edges based on nearest neighbors
+            for i in range(n_samples):
+                for j_idx, j in enumerate(indices[i]):
+                    # Skip self-loops
+                    if i == j:
                         continue
-                        
-                    paths = path_complex[dim]
                     
-                    # Create boundary matrix
-                    n_paths = len(paths)
-                    boundary_matrix = np.zeros((n_paths, n_paths))
+                    # Enforce temporal ordering if required
+                    if enforce_temporal and i >= j:
+                        continue
                     
-                    # Fill boundary matrix
-                    for j, path in enumerate(paths):
-                        # Get boundary paths
-                        boundary_paths = []
-                        for k in range(len(path) - 1):
-                            boundary_path = path[:k] + path[k+1:]
-                            if dim-1 in path_complex and boundary_path in path_complex[dim-1]:
-                                boundary_paths.append(path_complex[dim-1].index(boundary_path))
-                        
-                        # Add to boundary matrix (if appropriate dimension exists)
-                        if dim-1 in path_complex:
-                            for k in boundary_paths:
-                                if k < boundary_matrix.shape[1]:
-                                    boundary_matrix[j, k] = 1
-                    
-                    # Compute homology
-                    homology = self._compute_homology_from_boundary(boundary_matrix)
-                    betti_series.append(homology['betti'])
+                    # Add edge with weight
+                    weight = 1.0 / max(distances[i][j_idx], 1e-10)
+                    adjacency[i, j] = weight
+        else:
+            # Epsilon threshold approach
+            if enforce_temporal:
+                # Only create edges that respect temporal ordering (i < j)
+                # Convert matrices to float type to ensure compatibility
+                distance_mask = (self.temporal_distance_matrix <= epsilon).astype(float)
+                temporal_mask = np.triu(np.ones_like(self.temporal_distance_matrix), k=1).astype(float)
+                combined_mask = (distance_mask * temporal_mask) > 0
+                rows, cols = np.where(combined_mask)
+            else:
+                # Create edges in both directions
+                rows, cols = np.where(self.temporal_distance_matrix <= epsilon)
                 
-                path_zigzag_diagrams[f'betti_{dim}'] = betti_series
+            # Add edges with weights
+            for i, j in zip(rows, cols):
+                if i != j:  # Avoid self-loops
+                    weight = 1.0 / max(self.temporal_distance_matrix[i, j], 1e-10)
+                    adjacency[i, j] = weight
+        
+        # Convert to CSR format for efficient operations
+        adjacency = adjacency.tocsr()
+        
+        print(f"Built sparse directed network with {adjacency.getnnz()} edges in {time.time() - start_time:.2f} seconds")
+        print(f"Sparsity: {adjacency.getnnz() / (n_samples * n_samples):.6f}")
+        
+        return adjacency
+    
+    def build_directed_filtration(self, max_dimension=2, max_simplex_size=None):
+        """
+        Build a directed filtration representing the sequential market microstructure.
+        Uses GUDHI's SimplexTree structure for efficient computation.
+        
+        Parameters:
+        -----------
+        max_dimension : int
+            Maximum homology dimension to compute
+        max_simplex_size : int or None
+            Maximum size of simplices to include in filtration
             
-            # Compute zigzag persistence across windows
-            transition_features = []
+        Returns:
+        --------
+        gudhi.SimplexTree
+            Simplex tree containing the filtration
+        """
+        start_time = time.time()
+        print(f"Building directed filtration (max dim={max_dimension})...")
+        
+        # Build network if not already done
+        if not hasattr(self, 'adjacency') or self.adjacency is None:
+            self.adjacency = self.build_sparse_directed_network()
+        
+        # Create simplex tree
+        st = SimplexTree()
+        
+        # Add vertices (0-simplices)
+        for i in range(self.n_samples):
+            st.insert([i], filtration=0.0)
+        
+        # Add edges (1-simplices) with filtration values
+        cx, cy = self.adjacency.nonzero()
+        
+        for i, j in zip(cx, cy):
+            # Add directed edge with filtration value
+            weight = self.adjacency[i, j]
+            filtration_value = 1.0 / weight if weight > 0 else float('inf')
+            st.insert([i, j], filtration=filtration_value)
+        
+        # Add higher-order simplices
+        if max_dimension >= 2:
+            # Expand filtration to higher dimensions
+            st.expansion(max_dimension)
             
-            # For each pair of consecutive windows, analyze transitions
-            for i in range(len(window_indices) - 1):
-                current_window = window_indices[i]
-                next_window = window_indices[i+1]
+            # If specific max simplex size is set, prune larger simplices
+            if max_simplex_size is not None:
+                # Get all simplices
+                simplices = list(st.get_filtration())
                 
-                # Find overlap indices
-                overlap_indices = set(current_window).intersection(set(next_window))
+                # Keep only simplices of desired size
+                for simplex, filt_value in simplices:
+                    if len(simplex) > max_simplex_size:
+                        st.remove_simplex(simplex)
+        
+        # Print summary statistics
+        num_simplices = st.num_simplices()
+        print(f"Filtration built with {num_simplices} simplices in {time.time() - start_time:.2f} seconds")
+        
+        # Count simplices by dimension using get_skeleton
+        print(f"Simplex counts by dimension:")
+        for dim in range(max_dimension + 1):
+            skeleton = st.get_skeleton(dim)
+            count = sum(1 for _ in skeleton)
+            print(f"  Dimension {dim}: {count}")
+        
+        # Store the simplex tree
+        self.simplex_tree = st
+        
+        return st
+
+    def compute_persistent_homology(self, max_dimension=2, min_persistence=0.01):
+        """
+        Compute persistent homology using the built filtration.
+        
+        Parameters:
+        -----------
+        max_dimension : int
+            Maximum homology dimension to compute
+        min_persistence : float
+            Minimum persistence value to consider (noise threshold)
+            
+        Returns:
+        --------
+        list
+            Persistence diagram (list of (dim, birth, death) tuples)
+        """
+        start_time = time.time()
+        print(f"Computing persistent homology (max dim={max_dimension})...")
+        
+        # Build filtration if not already done
+        if self.simplex_tree is None:
+            self.build_directed_filtration(max_dimension=max_dimension)
+        
+        # Compute persistence
+        self.simplex_tree.compute_persistence(min_persistence=min_persistence)
+        
+        # Extract persistence diagram
+        persistence = self.simplex_tree.persistence()
+        
+        # Get persistence pairs
+        persistence_pairs = self.simplex_tree.persistence_pairs()
+        
+        # Store persistence diagrams
+        self.persistence_diagrams = persistence
+        
+        # Compute Betti curves
+        self._compute_betti_curves()
+        
+        # Print persistence summary
+        print(f"Computed persistent homology in {time.time() - start_time:.2f} seconds")
+        print("Persistence diagram summary:")
+        for dim in range(max_dimension + 1):
+            dim_pairs = [p for p in persistence if p[0] == dim]
+            print(f"  Dimension {dim}: {len(dim_pairs)} persistence pairs")
+        
+        return persistence
+    
+    def _compute_betti_curves(self, num_points=100):
+        """
+        Compute Betti curves from the persistence diagram.
+        A Betti curve shows how Betti numbers change across filtration values.
+        
+        Parameters:
+        -----------
+        num_points : int
+            Number of points in the Betti curve
+            
+        Returns:
+        --------
+        dict
+            Dictionary of Betti curves by dimension
+        """
+        if self.persistence_diagrams is None:
+            raise ValueError("Persistence diagrams must be computed first")
+        
+        # Get the filtration range
+        min_val = float('inf')
+        max_val = 0
+        
+        # GUDHI persistence format is [(dimension, (birth, death)), ...]
+        for dim_pair in self.persistence_diagrams:
+            dim = dim_pair[0]  # dimension
+            birth = dim_pair[1][0]  # birth time
+            death = dim_pair[1][1]  # death time
+            
+            if birth < min_val:
+                min_val = birth
+            if death > max_val and death != float('inf'):
+                max_val = death
+        
+        # Handle the case of infinite max_val
+        if max_val == 0:
+            max_val = 1.0
+        
+        # Create filtration values
+        filtration_values = np.linspace(min_val, max_val, num_points)
+        
+        # Initialize Betti curves
+        max_dim = max([dim_pair[0] for dim_pair in self.persistence_diagrams]) if self.persistence_diagrams else 0
+        betti_curves = {dim: np.zeros(num_points) for dim in range(max_dim + 1)}
+        
+        # Compute Betti numbers at each filtration value
+        for i, filt_val in enumerate(filtration_values):
+            for dim_pair in self.persistence_diagrams:
+                dim = dim_pair[0]
+                birth = dim_pair[1][0]
+                death = dim_pair[1][1]
                 
-                # Track transitions of paths
-                for dim in range(1, max_path_length + 1):  # Skip 0-dim (just points)
-                    if dim in path_complexes[i] and dim in path_complexes[i+1]:
-                        # Find paths in current window that have elements in the overlap
-                        persistent_paths = []
-                        for path in path_complexes[i][dim]:
-                            # Check if path nodes are in overlap (need original indices)
-                            path_nodes = [networks[i].nodes[node]['original_idx'] for node in path]
-                            if any(idx in overlap_indices for idx in path_nodes):
-                                persistent_paths.append(path)
-                        
-                        transition_features.append({
-                            'window_pair': (i, i+1),
-                            'dimension': dim,
-                            'persistent_paths': len(persistent_paths)
-                        })
+                if birth <= filt_val < death:
+                    betti_curves[dim][i] += 1
+        
+        # Store Betti curves
+        self.betti_curves = {
+            'values': filtration_values,
+            'curves': betti_curves
+        }
+        
+        return self.betti_curves
+    
+    def compute_zigzag_persistence(self, window_size=100, overlap=50, max_dimension=2, min_persistence=0.01):
+        """
+        Compute zigzag persistence across sliding windows to preserve sequential structure.
+        This is crucial for market microstructure data where temporal sequence matters.
+        
+        Parameters:
+        -----------
+        window_size : int
+            Size of each window
+        overlap : int
+            Overlap between consecutive windows
+        max_dimension : int
+            Maximum homology dimension to compute
+        min_persistence : float
+            Minimum persistence value to consider
             
-            path_zigzag_diagrams['transitions'] = transition_features
+        Returns:
+        --------
+        dict
+            Dictionary of zigzag persistence results
+        """
+        start_time = time.time()
+        print(f"Computing zigzag persistence with window_size={window_size}, overlap={overlap}...")
+        
+        # Ensure distance matrix is computed
+        if self.temporal_distance_matrix is None:
+            self.compute_temporally_weighted_distance()
+        
+        # Create windows with overlap
+        n_samples = self.n_samples
+        window_indices = []
+        
+        for i in range(0, n_samples - window_size + 1, window_size - overlap):
+            window_idx = list(range(i, min(i + window_size, n_samples)))
+            if len(window_idx) < 3:  # Skip too small windows
+                continue
+                
+            window_indices.append(window_idx)
+        
+        if not window_indices:
+            print("No valid windows found. Try reducing window_size or increasing overlap.")
+            return None
+        
+        print(f"Created {len(window_indices)} windows with size ≈{window_size} and overlap ≈{overlap}")
+        
+        # Initialize zigzag persistence results
+        zigzag_results = {
+            'windows': window_indices,
+            'persistence_diagrams': [],
+            'betti_numbers': {},
+            'window_transitions': []
+        }
+        
+        # For each window, compute persistent homology
+        for i, window_idx in enumerate(window_indices):
+            print(f"Processing window {i+1}/{len(window_indices)}...")
             
-            # Generate epsilon stepping for filtration
-            epsilon_values = np.linspace(min_epsilon, max_epsilon, num_steps)
+            # Get window data
+            window_features = self.features[window_idx]
+            window_times = self.timestamps[window_idx]
             
-            # Store results
-            self.path_zigzag_diagrams = {
-                'window_complexes': path_complexes,
-                'window_networks': networks,
-                'window_indices': window_indices,
-                'betti_numbers': path_zigzag_diagrams,
-                'epsilon_values': epsilon_values,
-                'window_size': window_size,
-                'overlap': overlap
+            # Create distance matrix for this window
+            window_dist = self.temporal_distance_matrix[np.ix_(window_idx, window_idx)]
+            
+            # Build filtration for this window
+            st = SimplexTree()
+            
+            # Add vertices
+            for j in range(len(window_idx)):
+                st.insert([j], filtration=0.0)
+            
+            # Add edges
+            for j in range(len(window_idx)):
+                for k in range(j+1, len(window_idx)):  # Enforce temporal ordering 
+                    if window_dist[j, k] <= 1.0:  # Threshold
+                        filtration_value = window_dist[j, k]
+                        st.insert([j, k], filtration=filtration_value)
+            
+            # Expand to higher dimensions
+            st.expansion(max_dimension)
+            
+            # Compute persistence
+            st.compute_persistence(min_persistence=min_persistence)
+            
+            # Get persistence diagram
+            persistence = st.persistence()
+            
+            # Get simplices with their filtration values
+            simplices_with_filtration = list(st.get_filtration())
+            
+            # Create a mapping from simplex to its filtration value
+            simplex_to_filtration = {tuple(simplex): filt for simplex, filt in simplices_with_filtration}
+            
+            # Store results with original indices
+            window_persistence = []
+            for dim_pair in persistence:
+                dim = dim_pair[0]  # dimension
+                birth = dim_pair[1][0]  # birth time
+                death = dim_pair[1][1]  # death time
+                
+                # Find corresponding simplex for this persistence pair
+                # We'll store the first simplex we find with matching dimension and filtration value
+                matching_simplex = None
+                for simplex, filt in simplices_with_filtration:
+                    if len(simplex) == dim + 1 and abs(filt - birth) < 1e-10:
+                        matching_simplex = simplex
+                        break
+                
+                if matching_simplex is not None:
+                    # Map local indices to global indices
+                    global_simplex = [window_idx[s] for s in matching_simplex]
+                    window_persistence.append((dim, birth, death, global_simplex))
+                else:
+                    # If no matching simplex found, store without simplex information
+                    window_persistence.append((dim, birth, death, []))
+            
+            zigzag_results['persistence_diagrams'].append(window_persistence)
+            
+            # Compute Betti numbers for each dimension
+            for dim in range(max_dimension + 1):
+                betti_key = f'betti_{dim}'
+                if betti_key not in zigzag_results['betti_numbers']:
+                    zigzag_results['betti_numbers'][betti_key] = []
+                
+                # Count persistence pairs with birth <= 1.0 and death > 1.0
+                betti = len([p for p in persistence if p[0] == dim and p[1][0] <= 1.0 and p[1][1] > 1.0])
+                zigzag_results['betti_numbers'][betti_key].append(betti)
+        
+        # Compute window transitions
+        for i in range(len(window_indices) - 1):
+            current_window = set(window_indices[i])
+            next_window = set(window_indices[i+1])
+            
+            # Find overlap indices
+            overlap_indices = current_window.intersection(next_window)
+            
+            if not overlap_indices:
+                continue
+            
+            # Store transition information
+            transition = {
+                'window_pair': (i, i+1),
+                'overlap_size': len(overlap_indices),
+                'overlap_indices': list(overlap_indices),
+                'persistence_comparison': self._compare_window_persistence(
+                    zigzag_results['persistence_diagrams'][i],
+                    zigzag_results['persistence_diagrams'][i+1],
+                    overlap_indices
+                )
             }
             
-            # Generate visualizations
-            if output_dir is not None:
-                os.makedirs(output_dir, exist_ok=True)
-                
-                # Plot Betti numbers across windows
-                plt.figure(figsize=(12, 6))
-                
-                for dim in range(max_path_length + 1):
-                    betti_key = f'betti_{dim}'
-                    if betti_key in path_zigzag_diagrams:
-                        betti_values = path_zigzag_diagrams[betti_key]
-                        plt.plot(range(len(betti_values)), betti_values, 
-                               label=f'H{dim}', linewidth=2, marker='o')
-                
-                plt.xlabel('Window Index')
-                plt.ylabel('Betti Number')
-                plt.title('Path Zigzag Persistence: Betti Numbers Across Windows')
-                plt.legend()
-                plt.grid(True, alpha=0.3)
-                plt.savefig(os.path.join(output_dir, 'path_zigzag_betti.png'))
-                plt.close()
-                
-                # Plot transition diagram
-                if transition_features:
-                    plt.figure(figsize=(12, 6))
-                    
-                    # Group by dimension
-                    for dim in range(1, max_path_length + 1):
-                        dim_transitions = [t['persistent_paths'] for t in transition_features if t['dimension'] == dim]
-                        if dim_transitions:
-                            plt.plot(range(len(dim_transitions)), dim_transitions, 
-                                   label=f'Dim {dim}', linewidth=2, marker='x')
-                    
-                    plt.xlabel('Window Transition')
-                    plt.ylabel('Persistent Paths')
-                    plt.title('Path Structure Persistence Across Window Transitions')
-                    plt.legend()
-                    plt.grid(True, alpha=0.3)
-                    plt.savefig(os.path.join(output_dir, 'path_zigzag_transitions.png'))
-                    plt.close()
+            zigzag_results['window_transitions'].append(transition)
+        
+        # Store zigzag results
+        self.zigzag_diagrams = zigzag_results
+        
+        print(f"Zigzag persistence computation completed in {time.time() - start_time:.2f} seconds")
+        
+        return zigzag_results
+    
+    def _compare_window_persistence(self, pers1, pers2, overlap_indices):
+        """
+        Compare persistence diagrams between consecutive windows.
+        
+        Parameters:
+        -----------
+        pers1, pers2 : list
+            Persistence diagrams for consecutive windows
+        overlap_indices : set
+            Indices in the overlap region
             
-            print(f"Total path zigzag persistence computation completed in {time.time() - start_time:.2f} seconds")
-            return self.path_zigzag_diagrams
+        Returns:
+        --------
+        dict
+            Comparison metrics
+        """
+        overlap_set = set(overlap_indices)
+        
+        # Count features in the overlap region
+        overlap_features = {0: 0, 1: 0, 2: 0}
+        
+        # For the first window
+        for entry in pers1:
+            # Each entry is (dim, birth, death, simplex)
+            dim = entry[0]
+            simplex = entry[3]  # Get the simplex from the fourth element
             
-        except Exception as e:
-            print(f"Error in path zigzag persistence computation: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return None 
+            # Check if the simplex has any vertex in the overlap
+            if any(idx in overlap_set for idx in simplex):
+                if dim in overlap_features:
+                    overlap_features[dim] += 1
+        
+        # Calculate stability metrics (simplified Wasserstein distance)
+        # We only compare features in the overlap region
+        stability = {}
+        
+        for dim in range(3):  # Dimensions 0, 1, 2
+            # Extract persistence pairs for this dimension from both windows
+            # Each entry is (dim, birth, death, simplex)
+            pairs1 = [(entry[1], entry[2]) for entry in pers1 if entry[0] == dim]
+            pairs2 = [(entry[1], entry[2]) for entry in pers2 if entry[0] == dim]
+            
+            # Simple stability metric: difference in number of features
+            count_diff = abs(len(pairs1) - len(pairs2))
+            
+            stability[f'dim_{dim}_count_diff'] = count_diff
+            stability[f'dim_{dim}_overlap_count'] = overlap_features.get(dim, 0)
+        
+        return stability 

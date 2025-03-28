@@ -126,14 +126,16 @@ class TopologicalDataAnalyzer:
         if mi_matrix is not None and lambda_info > 0:
             # Check if dimensions match our feature count
             if mi_matrix.shape[0] == n_features and mi_matrix.shape[1] == n_features:
-                # Calculate importance of each feature based on sum of MI with other features
-                # Higher MI indicates more shared information, so we use inverse weighting
-                mi_importance = np.sum(mi_matrix, axis=1)
+                # Calculate importance of each feature based on average MI with other features
+                mi_importance = np.mean(mi_matrix, axis=1)  # Changed from sum to mean
                 mi_importance = np.nan_to_num(mi_importance, nan=0.0)  # Replace NaNs with 0
                 
-                # Transform MI importance to weights: lower MI means higher weight
-                if np.max(mi_importance) > 0:
-                    feature_weights = 1.0 / (1.0 + lambda_info * mi_importance / np.max(mi_importance))
+                # Transform MI importance to weights: higher MI means lower weight
+                if np.max(mi_importance) > np.min(mi_importance):
+                    # Normalize to [0,1] range first
+                    normalized_mi = (mi_importance - np.min(mi_importance)) / (np.max(mi_importance) - np.min(mi_importance))
+                    # Apply sigmoid-like transformation to get weights in [0.2, 1.0] range
+                    feature_weights = 0.2 + 0.8 / (1.0 + lambda_info * normalized_mi)
                 
                 print(f"Applied MI-based feature weighting: min={feature_weights.min():.4f}, max={feature_weights.max():.4f}")
             else:
@@ -365,13 +367,14 @@ class TopologicalDataAnalyzer:
         G : networkx.DiGraph
             Directed graph representation of the data
         max_path_length : int
-            Maximum length of paths to consider
+            Maximum length of paths to consider (fixed to 2)
             
         Returns:
         --------
         dict
             Dictionary of paths by dimension
         """
+        max_path_length = min(max_path_length, 2)  # Ensure max path length is at most 2
         print(f"Computing path complex with max path length {max_path_length}...")
         
         # Initialize path complex
@@ -550,12 +553,17 @@ class TopologicalDataAnalyzer:
             path_zigzag_diagrams = {
                 'window_diagrams': [],
                 'transitions': [],
-                'betti_numbers': []
+                'betti_numbers': {},
+                'window_indices': window_indices
             }
             
             # Process each dimension
             dimension_start = time.time()
+            persistence_summary = {0: [], 1: [], 2: []}  # Store persistence info for each dimension
+
             for dim in range(max_path_length + 1):
+                if dim > 2:  # Skip dimensions higher than 2
+                    continue
                 print(f"Processing homology in dimension {dim}...")
                 dim_start = time.time()
                 betti_series = []
@@ -572,6 +580,7 @@ class TopologicalDataAnalyzer:
                         # For 0-dimension, Betti number is number of connected components
                         betti = nx.number_connected_components(networks[i].to_undirected())
                         betti_series.append(betti)
+                        persistence_summary[dim].append(betti)
                         continue
                         
                     # Create boundary matrix
@@ -597,10 +606,35 @@ class TopologicalDataAnalyzer:
                     
                     # Compute homology
                     homology = self._compute_homology_from_boundary(boundary_matrix)
-                    betti_series.append(homology['betti'])
+                    betti = homology['betti']
+                    betti_series.append(betti)
+                    persistence_summary[dim].append(betti)
                 
                 path_zigzag_diagrams[f'betti_{dim}'] = betti_series
                 print(f"Dimension {dim} processing completed in {time.time() - dim_start:.2f} seconds")
+            
+            # Print persistence analysis
+            print("\n=== Persistence Analysis ===")
+            print("Found the following persistent features across windows:")
+            for dim in range(3):
+                persistent_count = sum(1 for b in persistence_summary[dim] if b > 0)
+                avg_betti = np.mean(persistence_summary[dim]) if persistence_summary[dim] else 0
+                max_betti = max(persistence_summary[dim]) if persistence_summary[dim] else 0
+                
+                print(f"\nDimension {dim}:")
+                print(f"- Persistent features found in {persistent_count} out of {len(persistence_summary[dim])} windows")
+                print(f"- Average Betti number: {avg_betti:.2f}")
+                print(f"- Maximum Betti number: {max_betti}")
+                print(f"- Betti number sequence: {persistence_summary[dim]}")
+
+            print("\nPersistence Stability Analysis:")
+            for dim in range(3):
+                betti_series = path_zigzag_diagrams[f'betti_{dim}']
+                if betti_series:
+                    changes = np.diff(betti_series)
+                    stability = 1.0 - (np.count_nonzero(changes) / len(changes)) if len(changes) > 0 else 1.0
+                    print(f"Dimension {dim} stability: {stability:.2%}")
+            print("===========================\n")
             
             # Compute zigzag persistence across windows
             print("Computing transitions between windows...")
@@ -785,8 +819,10 @@ class TopologicalDataAnalyzer:
         if self.temporal_distance_matrix is None:
             self.compute_temporally_weighted_distance()
         
-        # Base feature set
-        base_features = RobustScaler().fit_transform(self.features)
+        # Base feature set with NaN handling
+        scaler = RobustScaler(unit_variance=True)
+        base_features = np.nan_to_num(self.features, nan=0.0)  # Replace NaNs with 0
+        base_features = scaler.fit_transform(base_features)
         
         if use_topological_features:
             # Extract topological features if they haven't been computed
@@ -800,15 +836,15 @@ class TopologicalDataAnalyzer:
             topo_feature_matrix = np.zeros((n_samples, len(self.topological_features)))
             
             # For sequential data, use window-based assignment of topological features
-            if hasattr(self, 'zigzag_diagrams') and self.zigzag_diagrams is not None:
-                window_indices = self.zigzag_diagrams['windows']
+            if hasattr(self, 'path_zigzag_diagrams') and self.path_zigzag_diagrams is not None:
+                window_indices = self.path_zigzag_diagrams['window_indices']
                 
                 # Assign features to each point based on windows it belongs to
                 point_window_count = np.zeros(n_samples)
                 
                 for i, window_idx in enumerate(window_indices):
                     for idx in window_idx:
-                        topo_feature_matrix[idx] += self.topological_features
+                        topo_feature_matrix[idx] += np.nan_to_num(self.topological_features, nan=0.0)
                         point_window_count[idx] += 1
                 
                 # Average features for points in multiple windows
@@ -817,10 +853,11 @@ class TopologicalDataAnalyzer:
                         topo_feature_matrix[i] /= point_window_count[i]
             else:
                 # If no zigzag persistence, assign global topological features to all points
-                topo_feature_matrix = np.tile(self.topological_features, (n_samples, 1))
+                topo_feature_matrix = np.tile(np.nan_to_num(self.topological_features, nan=0.0), (n_samples, 1))
             
             # Normalize topological features
-            topo_feature_matrix = RobustScaler().fit_transform(topo_feature_matrix)
+            topo_feature_matrix = np.nan_to_num(topo_feature_matrix, nan=0.0)
+            topo_feature_matrix = scaler.fit_transform(topo_feature_matrix)
             
             # Combine base features with topological features
             combined_features = np.column_stack([base_features, topo_feature_matrix])
@@ -829,17 +866,19 @@ class TopologicalDataAnalyzer:
             combined_features = base_features
         
         # Compute transition strength from zigzag persistence
-        has_zigzag = hasattr(self, 'zigzag_diagrams') and self.zigzag_diagrams is not None
+        has_zigzag = hasattr(self, 'path_zigzag_diagrams') and self.path_zigzag_diagrams is not None
         
-        # Build affinity matrix for clustering
+        # Build affinity matrix for clustering with NaN handling
         n_samples = self.n_samples
         affinity = np.zeros((n_samples, n_samples))
         
         # Compute adaptive bandwidth for each point
         distances = squareform(pdist(combined_features))
+        distances = np.nan_to_num(distances, nan=np.nanmean(distances))  # Replace NaNs with mean distance
         k = min(15, n_samples - 1)  # k-nearest neighbors
         sorted_distances = np.sort(distances, axis=1)
         local_scales = sorted_distances[:, k].reshape(-1, 1)
+        local_scales = np.maximum(local_scales, 1e-8)  # Ensure non-zero bandwidth
         
         # Enhanced temporal coherence with adaptive window
         temporal_coherence = np.zeros((n_samples, n_samples))
@@ -857,36 +896,44 @@ class TopologicalDataAnalyzer:
         # Get transition strength if zigzag persistence was computed
         if has_zigzag:
             transition_strength = self._compute_zigzag_transition_strength()
+            if transition_strength is not None:
+                transition_strength = np.nan_to_num(transition_strength, nan=0.0)
         else:
             transition_strength = None
         
-        # Build the affinity matrix
+        # Build the affinity matrix with robust computation
         for i in range(n_samples):
             for j in range(i+1, n_samples):
-                # Compute feature similarity with adaptive bandwidth
-                feature_dist = distances[i, j]
-                bandwidth = np.mean([local_scales[i], local_scales[j]])
-                base_affinity = np.exp(-feature_dist**2 / (2 * bandwidth**2))
-                
-                # Enhanced temporal weighting
-                temporal_effect = 1.0 + temporal_coherence[i, j]
-                
-                # Incorporate zigzag information if available
-                if has_zigzag and transition_strength is not None:
-                    zigzag_boost = 1.0 + transition_strength[i, j] * 2.0
-                    affinity[i, j] = base_affinity * temporal_effect * zigzag_boost
-                else:
-                    affinity[i, j] = base_affinity * temporal_effect
-                
-                affinity[j, i] = affinity[i, j]  # Symmetric matrix
+                try:
+                    # Compute feature similarity with adaptive bandwidth
+                    feature_dist = distances[i, j]
+                    bandwidth = np.mean([local_scales[i], local_scales[j]])
+                    base_affinity = np.exp(-feature_dist**2 / (2 * bandwidth**2))
+                    
+                    # Enhanced temporal weighting
+                    temporal_effect = 1.0 + temporal_coherence[i, j]
+                    
+                    # Incorporate zigzag information if available
+                    if has_zigzag and transition_strength is not None:
+                        zigzag_boost = 1.0 + transition_strength[i, j] * 2.0
+                        affinity[i, j] = base_affinity * temporal_effect * zigzag_boost
+                    else:
+                        affinity[i, j] = base_affinity * temporal_effect
+                    
+                    affinity[j, i] = affinity[i, j]  # Symmetric matrix
+                except Exception as e:
+                    # If computation fails, use a fallback value
+                    affinity[i, j] = affinity[j, i] = np.exp(-1.0)  # Conservative fallback
         
-        # Normalize affinity matrix
-        affinity = affinity / np.max(affinity)
+        # Clean and normalize affinity matrix
+        affinity = np.nan_to_num(affinity, nan=0.0)  # Replace any remaining NaNs
+        if np.max(affinity) > 0:
+            affinity = affinity / np.max(affinity)
         np.fill_diagonal(affinity, 0)
         
         print(f"Affinity matrix range: [{np.min(affinity):.4f}, {np.max(affinity):.4f}]")
         
-        # Spectral clustering with the affinity matrix
+        # Try spectral clustering first
         try:
             clustering = SpectralClustering(
                 n_clusters=n_regimes,
@@ -903,43 +950,40 @@ class TopologicalDataAnalyzer:
             
             # If severely imbalanced, try alternative clustering
             if balance_ratio < 0.15:
-                print("Initial clustering imbalanced, attempting refinement...")
-                
-                # Use spectral embedding with GMM
-                from sklearn.manifold import SpectralEmbedding
-                
-                embedder = SpectralEmbedding(
-                    n_components=min(n_regimes * 2, n_samples - 1),
-                    affinity='precomputed',
-                    random_state=42
-                )
-                embedding = embedder.fit_transform(affinity)
-                
-                # Fit GMM
+                raise ValueError("Imbalanced clustering detected")
+            
+        except Exception as e:
+            print(f"Spectral clustering failed: {str(e)}")
+            print("Falling back to robust GMM clustering...")
+            
+            # Use PCA for dimensionality reduction
+            from sklearn.decomposition import PCA
+            
+            # Determine number of components to keep 95% of variance
+            pca = PCA(n_components=0.95, random_state=42)
+            reduced_features = pca.fit_transform(combined_features)
+            
+            # Fit GMM with multiple initializations
+            from sklearn.mixture import GaussianMixture
+            
+            best_gmm = None
+            best_bic = np.inf
+            
+            for _ in range(5):  # Try multiple initializations
                 gmm = GaussianMixture(
                     n_components=n_regimes,
                     covariance_type='full',
                     n_init=20,
-                    random_state=42
+                    random_state=np.random.randint(1000)
                 )
-                regime_labels = gmm.fit_predict(embedding)
+                gmm.fit(reduced_features)
                 
-                # Check if GMM improved balance
-                new_counts = np.bincount(regime_labels)
-                new_balance = np.min(new_counts) / np.max(new_counts)
-                
-                if new_balance > balance_ratio:
-                    print(f"Refined regime distribution: {new_counts}")
-                else:
-                    # Revert to original labels if no improvement
-                    regime_labels = clustering.labels_
-        
-        except Exception as e:
-            print(f"Error in spectral clustering: {str(e)}")
-            # Fallback to basic clustering
-            from sklearn.cluster import KMeans
-            kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=20)
-            regime_labels = kmeans.fit_predict(combined_features)
+                bic = gmm.bic(reduced_features)
+                if bic < best_bic:
+                    best_bic = bic
+                    best_gmm = gmm
+            
+            regime_labels = best_gmm.predict(reduced_features)
         
         # Store regime labels
         self.regime_labels = regime_labels
@@ -971,12 +1015,14 @@ class TopologicalDataAnalyzer:
         
         # Check which computations have been done
         has_persistence = self.persistence_diagrams is not None
-        has_zigzag = self.zigzag_diagrams is not None
+        has_zigzag = hasattr(self, 'path_zigzag_diagrams') and self.path_zigzag_diagrams is not None
         
         if not has_persistence and not has_zigzag:
             print("No persistence computations found. Computing persistent homology...")
             self.compute_persistent_homology()
             has_persistence = True
+        elif has_zigzag:
+            print("Using existing zigzag persistence computations...")
         
         # 1. Features from standard persistence
         if has_persistence:
@@ -984,7 +1030,7 @@ class TopologicalDataAnalyzer:
             persistence = self.persistence_diagrams
             
             # For each dimension, compute summary statistics
-            for dim in range(3):  # Dimensions 0, 1, 2
+            for dim in range(3):  # Dimensions 0, 1, 2 only
                 # Get persistence pairs for this dimension
                 # GUDHI format: (dimension, (birth, death))
                 pairs = [(p[1][0], p[1][1]) for p in persistence if p[0] == dim]
@@ -1061,10 +1107,10 @@ class TopologicalDataAnalyzer:
         # 2. Features from zigzag persistence
         if has_zigzag:
             # Extract Betti number profiles from each dimension
-            for dim in range(3):  # Dimensions 0, 1, 2
+            for dim in range(3):  # Dimensions 0, 1, 2 only
                 betti_key = f'betti_{dim}'
-                if betti_key in self.zigzag_diagrams['betti_numbers']:
-                    betti_values = self.zigzag_diagrams['betti_numbers'][betti_key]
+                if betti_key in self.path_zigzag_diagrams['betti_numbers']:
+                    betti_values = self.path_zigzag_diagrams['betti_numbers'][betti_key]
                     
                     if betti_values:
                         features = {
@@ -1341,46 +1387,59 @@ class TopologicalDataAnalyzer:
         for i in range(self.n_samples):
             st.insert([i], filtration=0.0)
         
-        # Add edges (1-simplices) with filtration values
+        # Get edges and their weights
         cx, cy = self.adjacency.nonzero()
+        edges = list(zip(cx, cy))
+        weights = self.adjacency.data
         
-        for i, j in zip(cx, cy):
-            # Add directed edge with filtration value
-            weight = self.adjacency[i, j]
-            filtration_value = 1.0 / weight if weight > 0 else float('inf')
+        # Normalize weights to [0,1] range
+        if len(weights) > 0:
+            min_weight = np.min(weights)
+            max_weight = np.max(weights)
+            if max_weight > min_weight:
+                weights = (weights - min_weight) / (max_weight - min_weight)
+        
+        # Add edges (1-simplices) with normalized filtration values
+        edge_dict = {}  # Store edges and their filtration values for higher dimensions
+        for (i, j), weight in zip(edges, weights):
+            filtration_value = weight
             st.insert([i, j], filtration=filtration_value)
+            edge_dict[(i, j)] = filtration_value
         
-        # Add higher-order simplices
+        # Add higher dimensional simplices
         if max_dimension >= 2:
-            # Expand filtration to higher dimensions
-            st.expansion(max_dimension)
+            # Create graph for finding triangles and higher simplices
+            G = nx.DiGraph()
+            G.add_weighted_edges_from([(i, j, w) for (i, j), w in zip(edges, weights)])
             
-            # If specific max simplex size is set, prune larger simplices
-            if max_simplex_size is not None:
-                # Get all simplices
-                simplices = list(st.get_filtration())
-                
-                # Keep only simplices of desired size
-                for simplex, filt_value in simplices:
-                    if len(simplex) > max_simplex_size:
-                        st.remove_simplex(simplex)
+            # Convert to undirected graph for triangle finding
+            G_undirected = G.to_undirected()
+            
+            # Find triangles using networkx's find_cliques
+            triangles = []
+            for clique in nx.find_cliques(G_undirected):
+                if len(clique) == 3:  # We only want triangles
+                    i, j, k = sorted(clique)  # Sort to ensure consistent ordering
+                    # Only include if all directed edges exist and respect ordering
+                    if (G.has_edge(i, j) and G.has_edge(j, k) and G.has_edge(i, k)):
+                        # Get maximum filtration value of constituent edges
+                        filt_val = max(edge_dict.get((i, j), 1.0),
+                                     edge_dict.get((j, k), 1.0),
+                                     edge_dict.get((i, k), 1.0))
+                        triangles.append(([i, j, k], filt_val))
+            
+            # Add triangles to filtration
+            for simplex, filt_val in triangles:
+                st.insert(simplex, filtration=filt_val)
         
-        # Print summary statistics
-        num_simplices = st.num_simplices()
-        print(f"Filtration built with {num_simplices} simplices in {time.time() - start_time:.2f} seconds")
-        
-        # Count simplices by dimension using get_skeleton
-        print(f"Simplex counts by dimension:")
+        # Print simplex counts by dimension
+        print("Simplex counts by dimension:")
         for dim in range(max_dimension + 1):
-            skeleton = st.get_skeleton(dim)
-            count = sum(1 for _ in skeleton)
+            count = st.num_simplices_by_dimension(dim)
             print(f"  Dimension {dim}: {count}")
         
-        # Store the simplex tree
-        self.simplex_tree = st
-        
         return st
-
+    
     def compute_persistent_homology(self, max_dimension=2, min_persistence=0.01):
         """
         Compute persistent homology using the built filtration.
@@ -1644,7 +1703,7 @@ class TopologicalDataAnalyzer:
             zigzag_results['window_transitions'].append(transition)
         
         # Store zigzag results
-        self.zigzag_diagrams = zigzag_results
+        self.path_zigzag_diagrams = zigzag_results
         
         print(f"Zigzag persistence computation completed in {time.time() - start_time:.2f} seconds")
         

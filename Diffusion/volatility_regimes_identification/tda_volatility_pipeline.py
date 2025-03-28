@@ -46,9 +46,11 @@ class TDAVolatilityPipeline:
     
     def process_data(self, df, timestamp_col='Timestamp', price_col='Value', 
                      volume_col='Volume', volatility_col='Volatility',
-                     window_sizes=None, n_regimes=4, **kwargs):
+                     window_sizes=None, n_regimes=4, training_batch=500000,
+                     batch_size=100000, **kwargs):
         """
         Process data through the complete TDA pipeline to identify volatility regimes.
+        Uses first training_batch observations for TDA analysis, then extends to full dataset.
         
         Parameters:
         -----------
@@ -66,6 +68,10 @@ class TDAVolatilityPipeline:
             List of window sizes for feature calculation
         n_regimes : int
             Number of regimes to identify
+        training_batch : int
+            Number of initial observations to use for TDA analysis
+        batch_size : int
+            Size of batches for processing remaining data
         **kwargs : dict
             Additional parameters to pass to specific pipeline components
             
@@ -78,42 +84,107 @@ class TDAVolatilityPipeline:
         total_start_time = time.time()
         
         # Store parameters
-        self.input_df = df.copy()
         self.timestamp_col = timestamp_col
         self.price_col = price_col
         self.volume_col = volume_col
         self.volatility_col = volatility_col
         self.window_sizes = window_sizes if window_sizes is not None else [10, 50, 100]
         
+        # Split data into training and extension parts
+        n_samples = len(df)
+        training_batch = min(training_batch, n_samples)  # Ensure we don't exceed data size
+        
+        print(f"\nUsing first {training_batch:,} observations for TDA analysis")
+        training_df = df.iloc[:training_batch].copy()
+        extension_df = df.iloc[training_batch:].copy() if training_batch < n_samples else None
+        
         # Extract parameters for specific pipeline steps
         feature_params = kwargs.get('feature_params', {})
         enhancement_params = kwargs.get('enhancement_params', {})
         tda_params = kwargs.get('tda_params', {})
         
-        # Step 1: Extract microstructure features
+        # Step 1: Run TDA on training batch
+        self.input_df = training_df
+        
+        # Extract microstructure features
         print("\n--- STEP 1: Extracting Microstructure Features ---")
         feature_start_time = time.time()
         self._extract_features(**feature_params)
         print(f"Feature extraction completed in {time.time() - feature_start_time:.2f} seconds")
         
-        # Step 2: Enhance features using information theory
+        # Enhance features using information theory
         print("\n--- STEP 2: Enhancing Features with Information Theory ---")
         enhancement_start_time = time.time()
         self._enhance_features(**enhancement_params)
         print(f"Feature enhancement completed in {time.time() - enhancement_start_time:.2f} seconds")
         
-        # Step 3: Perform topological data analysis to identify regimes
+        # Perform topological data analysis
         print("\n--- STEP 3: Performing Topological Data Analysis ---")
         tda_start_time = time.time()
         self._perform_tda_analysis(n_regimes=n_regimes, **tda_params)
         print(f"Topological analysis completed in {time.time() - tda_start_time:.2f} seconds")
         
-        # Create output DataFrame with regime labels
-        result_df = self.input_df.copy()
-        result_df['regime'] = self.regimes
+        # Train XGBoost model for extension
+        print("\n--- STEP 4: Training Regime Extension Model ---")
+        extension_start_time = time.time()
+        self._train_regime_extension_model()
+        print(f"Extension model training completed in {time.time() - extension_start_time:.2f} seconds")
+        
+        # Initialize result DataFrame with training results
+        result_df = df.copy()
+        result_df.loc[:training_batch-1, 'regime'] = self.regimes
+        
+        # Extend to remaining data if any
+        if extension_df is not None and len(extension_df) > 0:
+            print(f"\n--- STEP 5: Extending Regimes to Remaining {len(extension_df):,} Observations ---")
+            extension_start = time.time()
+            
+            # Process remaining data in batches
+            n_remaining = len(extension_df)
+            n_batches = (n_remaining + batch_size - 1) // batch_size
+            print(f"Processing in {n_batches} batches of size {batch_size}")
+            
+            for batch_idx, start_idx in enumerate(range(0, n_remaining, batch_size), 1):
+                batch_start = time.time()
+                end_idx = min(start_idx + batch_size, n_remaining)
+                batch_df = extension_df.iloc[start_idx:end_idx]
+                
+                print(f"\nProcessing batch {batch_idx}/{n_batches}")
+                print(f"Batch range: {start_idx:,} to {end_idx:,} ({end_idx-start_idx:,} observations)")
+                
+                # Process batch
+                batch_result = self._process_extension_batch(batch_df)
+                
+                # Store results
+                global_start = training_batch + start_idx
+                global_end = training_batch + end_idx
+                result_df.loc[global_start:global_end-1, 'regime'] = batch_result['regime']
+                result_df.loc[global_start:global_end-1, 'regime_confidence'] = batch_result['regime_confidence']
+                
+                # Print batch statistics
+                regime_counts = np.bincount(batch_result['regime'])
+                print(f"Batch processing time: {time.time() - batch_start:.2f} seconds")
+                print("Batch regime distribution:")
+                for regime, count in enumerate(regime_counts):
+                    print(f"  Regime {regime}: {count:,} ({count/(end_idx-start_idx)*100:.2f}%)")
+                print(f"Average confidence: {np.mean(batch_result['regime_confidence']):.4f}")
+                
+                # Print progress
+                progress = end_idx / n_remaining * 100
+                print(f"Overall progress: {progress:.1f}%")
+            
+            extension_time = time.time() - extension_start
+            print(f"\nExtension completed in {extension_time:.2f} seconds ({extension_time/60:.2f} minutes)")
+            print(f"Average processing time per batch: {extension_time/n_batches:.2f} seconds")
         
         total_time = time.time() - total_start_time
         print(f"\nTotal execution time: {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
+        
+        # Print final regime distribution
+        regime_counts = result_df['regime'].value_counts().sort_index()
+        print("\nFinal regime distribution:")
+        for regime, count in regime_counts.items():
+            print(f"Regime {regime}: {count:,} ({count/len(result_df)*100:.2f}%)")
         
         return result_df
     
@@ -200,8 +271,8 @@ class TDAVolatilityPipeline:
         return self
     
     def _perform_tda_analysis(self, n_regimes=4, alpha=0.5, beta=0.1, lambda_info=1.0,
-                             min_epsilon=0.1, max_epsilon=2.0, num_steps=10,
-                             window_size=100, overlap=50, max_path_length=3,
+                             min_epsilon=None, max_epsilon=None, num_steps=10,
+                             window_size=150, overlap=75, max_path_length=2,
                              **kwargs):
         """
         Perform topological data analysis to identify regimes.
@@ -216,16 +287,14 @@ class TDAVolatilityPipeline:
             Decay rate for temporal distance
         lambda_info : float
             Weight for information-theoretic component
-        min_epsilon : float
-            Minimum distance threshold for network construction
-        max_epsilon : float
-            Maximum distance threshold for network construction
+        min_epsilon, max_epsilon : float or None
+            Distance thresholds for network construction. If None, will be set adaptively.
         num_steps : int
             Number of steps in epsilon range
         window_size : int
-            Size of sliding window for zigzag persistence
+            Size of sliding window for zigzag persistence (increased for efficiency)
         overlap : int
-            Number of points to overlap between windows
+            Number of points to overlap between windows (50% of window_size)
         max_path_length : int
             Maximum path length for path complex
         **kwargs : dict
@@ -248,52 +317,23 @@ class TDAVolatilityPipeline:
         transformed_mi_matrix = None
         transformed_te_matrix = None
         
-        if hasattr(self.info_enhancer, 'mi_matrix') and self.info_enhancer.mi_matrix is not None:
-            # Get the original MI matrix and top feature indices
-            original_mi = self.info_enhancer.mi_matrix
-            
-            # Check if we have feature importance information to map indices
-            if hasattr(self.info_enhancer, 'feature_importance') and self.info_enhancer.feature_importance is not None:
-                # Get indices of the top features used in the enhanced feature set
-                top_indices = self.info_enhancer.feature_importance['ranked_indices'][:len(self.enhanced_feature_names)]
-                
-                # Extract the submatrix corresponding to these top features
-                # This creates a matrix where rows and columns correspond to the enhanced features
-                top_mi = original_mi[np.ix_(top_indices, top_indices)]
-                
-                # Create the transformed MI matrix matching enhanced feature dimensions
-                n_enhanced = len(self.enhanced_feature_names)
-                n_base = len(top_indices)
-                
-                # Only use the base features part (not the derived features)
-                if n_base <= n_enhanced:
-                    transformed_mi_matrix = top_mi
-                    print(f"Transformed MI matrix to match enhanced features: {transformed_mi_matrix.shape}")
-                else:
-                    print("Warning: Cannot properly transform MI matrix. Using None.")
-            else:
-                print("Warning: No feature importance information available to transform MI matrix")
-                
-        if hasattr(self.info_enhancer, 'transfer_entropy') and self.info_enhancer.transfer_entropy is not None:
-            # Apply the same transformation to the transfer entropy matrix
-            original_te = self.info_enhancer.transfer_entropy
-            
-            if hasattr(self.info_enhancer, 'feature_importance') and self.info_enhancer.feature_importance is not None:
-                top_indices = self.info_enhancer.feature_importance['ranked_indices'][:len(self.enhanced_feature_names)]
-                top_te = original_te[np.ix_(top_indices, top_indices)]
-                
-                n_enhanced = len(self.enhanced_feature_names)
-                n_base = len(top_indices)
-                
-                if n_base <= n_enhanced:
-                    transformed_te_matrix = top_te
-                    print(f"Transformed TE matrix to match enhanced features: {transformed_te_matrix.shape}")
-                else:
-                    print("Warning: Cannot properly transform TE matrix. Using None.")
-            else:
-                print("Warning: No feature importance information available to transform TE matrix")
+        if hasattr(self, 'mutual_info_matrix') and self.mutual_info_matrix is not None:
+            if self.mutual_info_matrix.shape[0] != len(self.enhanced_feature_names):
+                # Transform MI matrix to match enhanced features
+                feature_indices = [i for i, name in enumerate(self.feature_names) 
+                                 if name in self.enhanced_feature_names]
+                transformed_mi_matrix = self.mutual_info_matrix[feature_indices][:, feature_indices]
+                print(f"Transformed MI matrix to match enhanced features: {transformed_mi_matrix.shape}")
         
-        # Compute temporally weighted distance
+        if hasattr(self, 'transfer_entropy') and self.transfer_entropy is not None:
+            if self.transfer_entropy.shape[0] != len(self.enhanced_feature_names):
+                # Transform TE matrix to match enhanced features
+                feature_indices = [i for i, name in enumerate(self.feature_names) 
+                                 if name in self.enhanced_feature_names]
+                transformed_te_matrix = self.transfer_entropy[feature_indices][:, feature_indices]
+                print(f"Transformed TE matrix to match enhanced features: {transformed_te_matrix.shape}")
+        
+        # Compute distance matrix with information theory enhancement
         self.tda.compute_temporally_weighted_distance(
             alpha=alpha,
             beta=beta,
@@ -301,6 +341,16 @@ class TDAVolatilityPipeline:
             mi_matrix=transformed_mi_matrix,
             transfer_entropy=transformed_te_matrix
         )
+        
+        # Set adaptive epsilon range based on distance distribution
+        if min_epsilon is None or max_epsilon is None:
+            distances = self.tda.temporal_distance_matrix.flatten()
+            distances = distances[distances > 0]  # Exclude zeros
+            
+            # Use more conservative percentiles for epsilon range
+            min_epsilon = np.percentile(distances, 5)  # 5th percentile
+            max_epsilon = np.percentile(distances, 85)  # 85th percentile (reduced from 95)
+            print(f"Using adaptive epsilon range: [{min_epsilon:.4f}, {max_epsilon:.4f}]")
         
         # Compute persistent path zigzag homology
         self.tda.compute_persistent_path_zigzag_homology(
@@ -318,6 +368,83 @@ class TDAVolatilityPipeline:
         print(f"Identified {n_regimes} volatility regimes")
         return self
     
+    def _train_regime_extension_model(self, **kwargs):
+        """
+        Train XGBoost model for extending regimes to full dataset.
+        Uses enhanced features from TDA analysis for training.
+        
+        Parameters:
+        -----------
+        **kwargs : dict
+            Additional parameters for XGBoost model
+        """
+        import xgboost as xgb
+        from sklearn.model_selection import train_test_split
+        
+        print("\n--- STEP 4: Training XGBoost Model for Regime Extension ---")
+        print("Preparing training data...")
+        
+        # Use enhanced features for training
+        X = self.enhanced_features
+        y = self.regimes
+        
+        # Split data for validation, maintaining temporal order
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y, test_size=0.2, random_state=42, shuffle=False
+        )
+        print(f"Training set size: {len(X_train)}, Validation set size: {len(X_val)}")
+        print(f"Number of features: {X.shape[1]}")
+        print(f"Number of regimes: {len(np.unique(y))}")
+        
+        # Set XGBoost parameters
+        xgb_params = {
+            'objective': 'multi:softprob',
+            'num_class': len(np.unique(y)),
+            'max_depth': 6,
+            'learning_rate': 0.1,
+            'subsample': 0.8,
+            'colsample_bytree': 0.8,
+            'tree_method': 'hist',  # For faster training
+            'eval_metric': ['mlogloss', 'merror'],
+            'verbosity': 1,  # Show training progress
+            **kwargs
+        }
+        
+        print("\nXGBoost parameters:")
+        for param, value in xgb_params.items():
+            print(f"  {param}: {value}")
+        
+        # Create DMatrix for XGBoost
+        print("\nCreating DMatrix objects...")
+        dtrain = xgb.DMatrix(X_train, label=y_train)
+        dval = xgb.DMatrix(X_val, label=y_val)
+        
+        print("\nStarting XGBoost training...")
+        # Train model with early stopping
+        self.extension_model = xgb.train(
+            xgb_params,
+            dtrain,
+            num_boost_round=1000,
+            evals=[(dtrain, 'train'), (dval, 'val')],
+            early_stopping_rounds=20,
+            verbose_eval=10  # Print evaluation every 10 rounds
+        )
+        
+        # Save feature names for prediction
+        self.extension_feature_names = self.enhanced_feature_names
+        
+        # Print final model performance
+        print("\nFinal model performance:")
+        train_pred = np.argmax(self.extension_model.predict(dtrain), axis=1)
+        val_pred = np.argmax(self.extension_model.predict(dval), axis=1)
+        train_acc = np.mean(train_pred == y_train)
+        val_acc = np.mean(val_pred == y_val)
+        print(f"Training accuracy: {train_acc:.4f}")
+        print(f"Validation accuracy: {val_acc:.4f}")
+        
+        print("\nXGBoost model training completed")
+        return self
+    
     def save_model(self, filepath):
         """
         Save the pipeline model to a file.
@@ -328,6 +455,7 @@ class TDAVolatilityPipeline:
             Path to save the model
         """
         import pickle
+        import os
         
         # Create model object with all necessary components
         model_data = {
@@ -340,12 +468,19 @@ class TDAVolatilityPipeline:
             'feature_names': self.feature_names,
             'enhanced_features': self.enhanced_features,
             'enhanced_feature_names': self.enhanced_feature_names,
-            'regimes': self.regimes
+            'regimes': self.regimes,
+            'extension_feature_names': self.extension_feature_names if hasattr(self, 'extension_feature_names') else None
         }
         
-        # Save to file
+        # Save main model data
         with open(filepath, 'wb') as f:
             pickle.dump(model_data, f)
+            
+        # Save XGBoost model separately if it exists
+        if hasattr(self, 'extension_model'):
+            xgb_path = os.path.splitext(filepath)[0] + '_xgb.model'
+            self.extension_model.save_model(xgb_path)
+            print(f"XGBoost model saved to {xgb_path}")
             
         print(f"Model saved to {filepath}")
     
@@ -367,6 +502,8 @@ class TDAVolatilityPipeline:
             Loaded pipeline instance
         """
         import pickle
+        import os
+        import xgboost as xgb
         
         # Load model data
         with open(filepath, 'rb') as f:
@@ -387,106 +524,135 @@ class TDAVolatilityPipeline:
         pipeline.enhanced_feature_names = model_data['enhanced_feature_names']
         pipeline.regimes = model_data['regimes']
         
+        if model_data['extension_feature_names'] is not None:
+            pipeline.extension_feature_names = model_data['extension_feature_names']
+            
+            # Try to load XGBoost model
+            xgb_path = os.path.splitext(filepath)[0] + '_xgb.model'
+            if os.path.exists(xgb_path):
+                pipeline.extension_model = xgb.Booster()
+                pipeline.extension_model.load_model(xgb_path)
+                print(f"XGBoost model loaded from {xgb_path}")
+        
         # If new data is provided, label it
         if df is not None:
             pipeline.input_df = df.copy()
-            labeled_df = pipeline.label_new_data(df)
+            labeled_df = pipeline._extend_regimes_to_full_dataset(df)
             return pipeline, labeled_df
         
         return pipeline
     
-    def label_new_data(self, new_df):
+    def _process_extension_batch(self, batch_df):
         """
-        Label new data with the identified regimes.
+        Process a batch of data for regime extension.
         
         Parameters:
         -----------
-        new_df : pandas.DataFrame
-            New data to label with the identified regimes
+        batch_df : pandas.DataFrame
+            Batch of data to process
             
         Returns:
         --------
-        pandas.DataFrame
-            New data with regime labels
+        dict
+            Dictionary containing regime labels and confidence scores
         """
-        if self.regimes is None or self.enhanced_features is None:
-            raise ValueError("Pipeline must be trained before labeling new data")
+        import xgboost as xgb
         
-        print("Labeling new data with identified regimes...")
-        
-        # Process new data through the same pipeline
-        # Step 1: Extract features
+        # Extract features for this batch
         feature_engine = MicrostructureFeatureEngine(
-            new_df,
+            batch_df,
             timestamp_col=self.timestamp_col,
             price_col=self.price_col,
             volume_col=self.volume_col,
             volatility_col=self.volatility_col
         )
         
-        new_features, new_feature_names, new_df = feature_engine.extract_all_features(
+        # Extract and enhance features using same parameters as training
+        batch_features, _, _ = feature_engine.extract_all_features(
             window_sizes=self.window_sizes
         )
         
-        # Step 2: Enhance features using the same approach as training
-        # Create a new info enhancer but copy over feature importance from trained model
-        new_info_enhancer = InformationTheoryEnhancer(
-            new_features, 
-            new_feature_names
+        # Create info enhancer for feature enhancement
+        info_enhancer = InformationTheoryEnhancer(
+            batch_features,
+            self.feature_names
         )
         
-        # Copy feature importance from trained model
-        if hasattr(self, 'info_enhancer') and hasattr(self.info_enhancer, 'feature_importance'):
-            new_info_enhancer.feature_importance = self.info_enhancer.feature_importance
-        
-        # Determine parameters from trained model
-        include_entropy = any('_ent_weighted' in f for f in self.enhanced_feature_names)
-        include_kl = any('_kl' in f for f in self.enhanced_feature_names)
-        include_transfer_entropy = any('_te_weighted' in f for f in self.enhanced_feature_names)
-        include_high_signal = any('_high_signal' in f for f in self.enhanced_feature_names)
-        
-        # Estimate entropy
-        new_info_enhancer.estimate_shannon_entropy()
-        
-        # Compute mutual information using FFT for faster processing
-        new_info_enhancer.compute_mutual_information_matrix(
-            use_fft=True,
-            fast_approximation=True
+        # Enhance features using same parameters as training
+        # Use histogram approximation for faster computation in batch processing
+        batch_enhanced_features, _ = info_enhancer.enhance_features(
+            n_features=len(self.extension_feature_names),
+            is_training=False,  # Don't recompute MI matrices
+            include_entropy=True,
+            include_kl=False,  # Skip KL divergence for batch processing
+            include_transfer_entropy=False  # Skip transfer entropy for batch processing
         )
         
-        # Compute transfer entropy if needed
-        if include_transfer_entropy:
-            new_info_enhancer.compute_transfer_entropy()
+        # Create DMatrix for prediction
+        dbatch = xgb.DMatrix(batch_enhanced_features)
         
-        # Enhance features
-        n_features = len(self.enhanced_feature_names)
-        new_enhanced_features, _ = new_info_enhancer.enhance_features(
-            n_features=n_features,
-            include_entropy=include_entropy,
-            include_kl=include_kl, 
-            include_transfer_entropy=include_transfer_entropy,
-            include_high_signal=include_high_signal,
-            is_training=False
-        )
+        # Get predictions and probabilities
+        pred_probs = self.extension_model.predict(dbatch)
+        predictions = np.argmax(pred_probs, axis=1)
+        confidences = np.max(pred_probs, axis=1)
         
-        # Step 3: Use the trained model to label new data
-        # We'll use k-nearest neighbors for assigning regimes to new points
-        from sklearn.neighbors import KNeighborsClassifier
+        return {
+            'regime': predictions,
+            'regime_confidence': confidences
+        }
+    
+    def _extend_regimes_to_full_dataset(self, df, batch_size=100000):
+        """
+        Extend regimes to full dataset using trained XGBoost model.
+        Processes data in batches to handle large datasets efficiently.
         
-        # Train a k-NN classifier on the original data
-        knn = KNeighborsClassifier(n_neighbors=5, weights='distance')
-        knn.fit(self.enhanced_features, self.regimes)
+        Parameters:
+        -----------
+        df : pandas.DataFrame
+            Full dataset to label
+        batch_size : int
+            Size of batches for processing
+            
+        Returns:
+        --------
+        pandas.DataFrame
+            DataFrame with regime labels
+        """
+        import xgboost as xgb
         
-        # Predict regimes for new data
-        new_regimes = knn.predict(new_enhanced_features)
+        if not hasattr(self, 'extension_model'):
+            raise ValueError("Extension model must be trained first")
+            
+        print(f"Extending regimes to {len(df):,} data points...")
+        result_df = df.copy()
+        n_samples = len(df)
         
-        # Get prediction probabilities for confidence scores
-        new_regime_probs = knn.predict_proba(new_enhanced_features)
-        new_confidence = np.max(new_regime_probs, axis=1)
+        # Initialize arrays for predictions and confidences
+        all_regimes = np.zeros(n_samples, dtype=int)
+        all_confidences = np.zeros(n_samples)
         
-        # Add regime and confidence to new data
-        new_df['regime'] = new_regimes
-        new_df['regime_confidence'] = new_confidence
+        # Process in batches
+        for start_idx in range(0, n_samples, batch_size):
+            end_idx = min(start_idx + batch_size, n_samples)
+            print(f"Processing batch {start_idx:,} to {end_idx:,}")
+            
+            # Get batch data
+            batch_df = df.iloc[start_idx:end_idx]
+            
+            # Process batch
+            batch_result = self._process_extension_batch(batch_df)
+            
+            # Store results
+            all_regimes[start_idx:end_idx] = batch_result['regime']
+            all_confidences[start_idx:end_idx] = batch_result['regime_confidence']
+            
+            print(f"Batch regime distribution: {np.bincount(batch_result['regime'])}")
         
-        print(f"Labeled {len(new_df)} data points with regimes")
-        return new_df 
+        # Add predictions to result DataFrame
+        result_df['regime'] = all_regimes
+        result_df['regime_confidence'] = all_confidences
+        
+        print("Regime extension completed")
+        print(f"Final regime distribution: {np.bincount(all_regimes)}")
+        
+        return result_df 

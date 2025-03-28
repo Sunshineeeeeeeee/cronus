@@ -95,35 +95,52 @@ class InformationTheoryEnhancer:
 
     def estimate_shannon_entropy(self, bandwidth_method='silverman'):
         """
-        Estimate Shannon entropy using cosine kernel with heavy-tail emphasis.
+        Estimate Shannon entropy using kernel density estimation with heavy-tail adjustment.
+        
+        Parameters:
+        -----------
+        bandwidth_method : str
+            Method for bandwidth selection ('silverman' or 'scott')
+            
+        Returns:
+        --------
+        numpy.ndarray
+            Array of entropy values for each feature
         """
-        start_time = time.time()
         print("Estimating Shannon entropy with heavy-tail adjustment...")
+        start_time = time.time()
         
-        self.entropy = np.zeros(self.n_features)
+        n_features = self.feature_array.shape[1]
+        entropy = np.zeros(n_features)
         
-        for j in range(self.n_features):
-            x = self.scaled_data[:, j].reshape(-1, 1)
+        for i in range(n_features):
+            x = self.feature_array[:, i].reshape(-1, 1)
             
-            # Adjust for heavy tails
-            tail_factor, weights = self._adjust_for_heavy_tails(x)
+            # Compute robust statistics for bandwidth
+            iqr = np.percentile(x, 75) - np.percentile(x, 25)
+            std = np.std(x)
+            n = len(x)
             
-            # Determine base bandwidth
+            # Use robust bandwidth estimation
             if bandwidth_method == 'silverman':
-                bw = 1.06 * np.std(x) * self.n_samples**(-1/5)
-            else:
-                bw = 3.49 * np.std(x) * self.n_samples**(-1/3)
+                bw = 0.9 * min(std, iqr/1.34) * n**(-0.2)
+            else:  # scott
+                bw = 1.06 * min(std, iqr/1.34) * n**(-0.2)
+                
+            # Ensure bandwidth is positive
+            bw = max(bw, 1e-3)
             
-            # Adjust bandwidth for heavy tails
-            bw *= tail_factor
+            # Weight points based on their distance from the mean
+            weights = np.ones(n)
+            mean = np.mean(x)
+            std = np.std(x)
+            if std > 0:
+                z_scores = np.abs((x - mean) / std).flatten()
+                # Apply sigmoid weighting to reduce impact of outliers
+                weights = 1 / (1 + np.exp(z_scores - 3))
             
-            # Apply weights by replicating points in tails
-            x_weighted = []
-            for i, point in enumerate(x):
-                # Add more copies of points in the tails
-                n_copies = int(np.ceil(weights[i]))
-                x_weighted.extend([point] * n_copies)
-            x_weighted = np.array(x_weighted).reshape(-1, 1)
+            # Create weighted sample
+            x_weighted = np.repeat(x, (weights * 100).astype(int), axis=0)
             
             # Fit kernel density with cosine kernel on weighted points
             kde = KernelDensity(
@@ -134,38 +151,36 @@ class InformationTheoryEnhancer:
             
             # Evaluate density at sample points with more points in tails
             std = np.std(x)
-            eval_points = np.linspace(x.min() - std * tail_factor, 
-                                    x.max() + std * tail_factor,
-                                    num=min(1000, self.n_samples))
-            eval_points = eval_points.reshape(-1, 1)
+            if std > 0:
+                eval_points = np.linspace(np.min(x) - 2*std, np.max(x) + 2*std, 1000).reshape(-1, 1)
+            else:
+                eval_points = np.linspace(np.min(x) - 0.1, np.max(x) + 0.1, 1000).reshape(-1, 1)
             
+            # Get log density
             log_dens = kde.score_samples(eval_points)
-            dens = np.exp(log_dens)
             
-            # Normalize densities
-            dens = dens / np.sum(dens)
-            
-            # Calculate entropy with tail emphasis
-            entropy_j = -np.sum(dens * np.log(dens + 1e-10))
-            self.entropy[j] = entropy_j
-            
+            # Compute entropy using trapezoidal rule
+            p = np.exp(log_dens)
+            p = p / np.trapz(p, eval_points.flatten())  # Normalize
+            entropy[i] = -np.trapz(p * np.log(p + 1e-10), eval_points.flatten())
+        
+        self.entropy = entropy
         print(f"Shannon entropy estimation completed in {time.time() - start_time:.2f} seconds")
-        return self
+        
+        return entropy
         
 
 
-    def compute_mutual_information_fft(self, n_bins=64, max_sample_size=100000):
+    def compute_mutual_information_histogram(self, n_bins=64, max_sample_size=100000):
         """
-        Compute mutual information using Fast Fourier Transform for efficient computation
-        on very large datasets (millions of observations).
-        
-        This approach uses FFT for fast histogram convolution to approximate joint
-        probability distributions, achieving O(n log n) complexity instead of O(n²).
+        Compute mutual information using histogram-based approximation for efficient computation
+        on large datasets. This method uses binning and histogram approximations to achieve
+        O(n log n) complexity.
         
         Parameters:
         -----------
         n_bins : int
-            Number of bins for histogram approximation (power of 2 for optimal FFT)
+            Number of bins for histogram approximation
         max_sample_size : int
             Maximum sample size to use (for memory efficiency on huge datasets)
             
@@ -175,16 +190,16 @@ class InformationTheoryEnhancer:
             Matrix of mutual information values
         """
         start_time = time.time()
-        print(f"Computing mutual information using FFT approximation (n_bins={n_bins})...")
+        print(f"Computing mutual information using histogram approximation (n_bins={n_bins})...")
         
         # Check if we need to subsample (for memory efficiency with huge datasets)
         if self.n_samples > max_sample_size:
-            print(f"Subsampling data from {self.n_samples} to {max_sample_size} samples for FFT computation")
+            print(f"Subsampling data from {self.n_samples} to {max_sample_size} samples")
             indices = np.random.choice(self.n_samples, max_sample_size, replace=False)
             data = self.scaled_data[indices]
         else:
             data = self.scaled_data
-            
+        
         n_samples, n_features = data.shape
         
         # Initialize mutual information matrix
@@ -207,7 +222,7 @@ class InformationTheoryEnhancer:
             # Store entropy on diagonal
             mi_matrix[i, i] = entropy_i
             
-        # Compute MI for all pairs using FFT
+        # Compute MI for all pairs using histograms
         for i in range(n_features):
             for j in range(i+1, n_features):
                 x = data[:, i]
@@ -237,7 +252,7 @@ class InformationTheoryEnhancer:
                 mi_matrix[i, j] = mi_value
                 mi_matrix[j, i] = mi_value  # Symmetric
                 
-        print(f"FFT-based MI computation completed in {time.time() - start_time:.2f} seconds")
+        print(f"Histogram-based MI computation completed in {time.time() - start_time:.2f} seconds")
         
         return mi_matrix
 
@@ -248,24 +263,21 @@ class InformationTheoryEnhancer:
         Parameters:
         -----------
         fast_approximation : bool
-            If True, use optimized implementation for faster computation
+            If True, use histogram-based approximation for faster computation
         use_fft : bool
-            If True, use FFT-based approximation (best for very large datasets)
+            Deprecated parameter, kept for backward compatibility
         n_rff_features : int
-            Number of random Fourier features (unused in optimized implementation)
+            Unused parameter, kept for backward compatibility
         fft_bins : int
-            Number of bins for FFT approximation (if use_fft=True)
+            Number of bins for histogram approximation (if fast_approximation=True)
             
         Returns:
         --------
         numpy.ndarray
             Array of shape (n_features, n_features) containing mutual information values
         """
-        if use_fft:
-            self.mi_matrix = self.compute_mutual_information_fft(n_bins=fft_bins)
-            return self.mi_matrix
-        elif fast_approximation:
-            self.mi_matrix = self.compute_mutual_information_matrix_fast()
+        if fast_approximation:
+            self.mi_matrix = self.compute_mutual_information_histogram(n_bins=fft_bins)
             return self.mi_matrix
             
         # Original KDE-based implementation for training phase
@@ -752,15 +764,13 @@ class InformationTheoryEnhancer:
             
             # Only compute MI if absolutely necessary 
             if self.mi_matrix is None and self.feature_importance is None:
-                # For large datasets (millions of observations), use FFT approximation
+                # For large datasets (millions of observations), use histogram approximation
                 if self.n_samples > 100000:
-                    print(f"Large dataset detected ({self.n_samples} samples). Computing mutual information using FFT approximation...")
-                    # Determine optimal number of bins based on data size
-                    n_bins = min(128, max(64, int(np.sqrt(self.n_samples / 100))))
-                    self.compute_mutual_information_matrix(use_fft=True, fft_bins=n_bins)
+                    print(f"Large dataset detected ({self.n_samples} samples). Computing mutual information using histogram approximation...")
+                    self.compute_mutual_information_matrix(fast_approximation=True)
                 else:
-                    # For smaller datasets, use standard fast approximation
-                    print("Computing mutual information using fast approximation for non-training phase...")
+                    # For smaller datasets, use histogram approximation
+                    print("Computing mutual information using histogram approximation for non-training phase...")
                     self.compute_mutual_information_matrix(fast_approximation=True)
                 
                 # Rank features after computing MI
@@ -773,6 +783,11 @@ class InformationTheoryEnhancer:
         enhanced_features = self.clean_data[:, top_indices]
         enhanced_names = [self.feature_names[idx] for idx in top_indices]
         
+        # In non-training mode, we only return the base features to match training dimensions
+        if not is_training:
+            return enhanced_features, enhanced_names
+        
+        # Add additional features only during training phase
         # Add entropy-weighted features if requested
         if include_entropy and self.entropy is not None:
             entropy_weights = self.entropy[top_indices] / np.sum(self.entropy[top_indices])
@@ -796,9 +811,7 @@ class InformationTheoryEnhancer:
                 # Use only top features
                 te_values = te_values[top_indices]
                 # Weight features by their transfer entropy
-                # Create a copy of just the base features to apply weights
-                base_features = self.clean_data[:, top_indices]
-                te_weighted = base_features * te_values.reshape(1, -1)
+                te_weighted = enhanced_features[:, :len(top_indices)] * te_values.reshape(1, -1)
                 
                 enhanced_features = np.column_stack([enhanced_features, te_weighted])
                 enhanced_names.extend([f"{name}_te_weighted" for name in enhanced_names[:len(top_indices)]])

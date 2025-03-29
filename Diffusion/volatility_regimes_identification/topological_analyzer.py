@@ -72,31 +72,43 @@ class TopologicalDataAnalyzer:
         
     def compute_temporally_weighted_distance(self, alpha=0.5, beta=0.1, lambda_info=1.0, mi_matrix=None, transfer_entropy=None, chunk_size=5000):
         """
-        Compute temporally-weighted distance matrix between data points with optimized memory usage.
-        Uses chunking for large datasets and specialized distance weighting for market microstructure.
+        Compute distance matrix with temporal weighting and information theory enhancement.
         
         Parameters:
         -----------
         alpha : float
             Weight for temporal component
         beta : float
-            Decay rate for temporal distance
+            Decay rate for temporal component
         lambda_info : float
-            Weight for mutual information component
-        mi_matrix : np.ndarray
-            Pre-computed mutual information matrix (feature × feature)
-        transfer_entropy : np.ndarray
-            Pre-computed transfer entropy matrix (feature × feature)
+            Weight for information-theoretic enhancement
+        mi_matrix : numpy.ndarray or None
+            Mutual information matrix (if provided)
+        transfer_entropy : numpy.ndarray or None
+            Transfer entropy matrix (if provided)
         chunk_size : int
             Size of chunks for large dataset computation
         """
+        from datetime import datetime  # Explicitly import datetime within the method
+        import pandas as pd
+        
         start_time = time.time()
         print("Computing temporally-weighted distance matrix...")
         
         # Convert timestamps to numerical values (seconds since first timestamp)
         time_indices = np.zeros(len(self.timestamps))
         
-        if np.issubdtype(self.timestamps.dtype, np.datetime64):
+        if isinstance(self.timestamps, pd.DatetimeIndex):
+            # Handle pandas DatetimeIndex explicitly
+            try:
+                t0 = self.timestamps[0]
+                time_indices = np.array([(t - t0).total_seconds() for t in self.timestamps])
+                print(f"Successfully processed pandas DatetimeIndex timestamps")
+            except Exception as e:
+                print(f"Warning: Could not convert pandas DatetimeIndex: {str(e)}")
+                time_indices = np.arange(len(self.timestamps))
+                print(f"Using sequential indices as time values")
+        elif hasattr(self.timestamps, 'dtype') and np.issubdtype(self.timestamps.dtype, np.datetime64):
             # Convert numpy datetime64 to seconds
             t0 = self.timestamps[0]
             time_diffs = self.timestamps - t0
@@ -107,8 +119,26 @@ class TopologicalDataAnalyzer:
             for i, t in enumerate(self.timestamps):
                 time_indices[i] = (t - t0).total_seconds()
         else:
-            # Try to convert numeric array
-            time_indices = np.array([float(t) for t in self.timestamps])
+            # Try to parse string timestamps
+            try:
+                # Parse strings to datetime using pandas
+                datetime_series = pd.to_datetime(self.timestamps)
+                t0 = datetime_series.iloc[0] if hasattr(datetime_series, 'iloc') else datetime_series[0]
+                
+                # Calculate time differences in seconds
+                if hasattr(datetime_series, 'iloc'):
+                    # Handle DataFrame or Series
+                    time_indices = np.array([(t - t0).total_seconds() for t in datetime_series])
+                else:
+                    # Handle array-like
+                    time_indices = np.array([(t - t0).total_seconds() for t in datetime_series])
+                
+                print(f"Successfully parsed string timestamps to datetime objects")
+            except Exception as e:
+                print(f"Warning: Could not parse string timestamps: {str(e)}")
+                # Fall back to index-based time if conversion fails
+                time_indices = np.arange(len(self.timestamps))
+                print(f"Using sequential indices as time values")
         
         # Normalize time indices to [0,1] range
         if len(time_indices) > 1:
@@ -519,6 +549,24 @@ class TopologicalDataAnalyzer:
                 # Create temporal distance submatrix for this window
                 window_dist_matrix = dist_matrix[np.ix_(window_idx, window_idx)]
                 
+                # Calculate window-specific adaptive epsilon threshold 
+                # This helps prevent identical networks between windows
+                if len(window_idx) > 10:
+                    # Get distance distribution for this window only
+                    flat_dists = window_dist_matrix.flatten()
+                    flat_dists = flat_dists[flat_dists > 0]  # Exclude zeros
+                    
+                    # Adaptive thresholds based on window's own distribution
+                    # Use 10th percentile for more selective connections instead of min_epsilon
+                    local_min_epsilon = max(min_epsilon, np.percentile(flat_dists, 10) if len(flat_dists) > 0 else min_epsilon)
+                    # Use more selective upper bound to create more varied networks
+                    local_max_epsilon = min(max_epsilon, np.percentile(flat_dists, 50) if len(flat_dists) > 0 else max_epsilon)
+                    
+                    print(f"Window {len(window_indices)}: Using adaptive epsilon range [{local_min_epsilon:.4f}, {local_max_epsilon:.4f}]")
+                else:
+                    local_min_epsilon = min_epsilon
+                    local_max_epsilon = max_epsilon
+                
                 # Create directed network for this window
                 G = nx.DiGraph()
                 
@@ -527,10 +575,47 @@ class TopologicalDataAnalyzer:
                     G.add_node(j, original_idx=idx, features=self.features[idx], timestamp=self.timestamps[idx])
                 
                 # Add edges (respecting temporal ordering)
+                edge_count = 0
+                max_edges_per_node = min(20, len(window_idx) // 3)  # Limit outgoing edges
+                
                 for j in range(len(window_idx)):
+                    # Find all potential edges for this node
+                    potential_edges = []
                     for k in range(j+1, len(window_idx)):  # Enforce j < k for temporal ordering
-                        if window_dist_matrix[j, k] <= min_epsilon:
-                            G.add_edge(j, k, weight=1.0/max(window_dist_matrix[j, k], 1e-10))
+                        dist = window_dist_matrix[j, k]
+                        if dist <= local_max_epsilon:
+                            potential_edges.append((k, dist))
+                    
+                    # Sort by distance (closest first)
+                    potential_edges.sort(key=lambda x: x[1])
+                    
+                    # Add limited number of edges
+                    edges_added = 0
+                    for k, dist in potential_edges:
+                        if dist <= local_min_epsilon or edges_added < max_edges_per_node // 2:
+                            # Weight edges by inverse distance (closer = stronger)
+                            edge_weight = 1.0/max(dist, 1e-10)
+                            G.add_edge(j, k, weight=edge_weight)
+                            edge_count += 1
+                            edges_added += 1
+                            
+                            # Stop when we reach our limit
+                            if edges_added >= max_edges_per_node:
+                                break
+                                
+                # No edges were added - this window might be too sparse
+                if edge_count == 0:
+                    print(f"Warning: No edges created for window {len(window_indices)}. Using nearest neighbor fallback.")
+                    # Fallback to add at least some edges
+                    for j in range(len(window_idx)):
+                        # Add edges to nearest neighbors
+                        dists = [(k, window_dist_matrix[j, k]) for k in range(j+1, len(window_idx))]
+                        dists.sort(key=lambda x: x[1])  # Sort by distance
+                        
+                        # Add edges to 5 nearest neighbors
+                        for k, dist in dists[:min(5, len(dists))]:
+                            G.add_edge(j, k, weight=1.0/max(dist, 1e-10))
+                            edge_count += 1
                 
                 networks.append(G)
             
@@ -827,9 +912,16 @@ class TopologicalDataAnalyzer:
         if use_topological_features:
             # Extract topological features if they haven't been computed
             if not hasattr(self, 'topological_features'):
+                print("\n=== Extracting Topological Features ===")
                 topo_features, topo_feature_names = self.extract_topological_features()
                 self.topological_features = topo_features
                 self.topological_feature_names = topo_feature_names
+                print(f"Extracted {len(topo_features)} topological features:")
+                for i, name in enumerate(topo_feature_names):
+                    print(f"  {i+1}. {name}: {topo_features[i]:.4f}")
+                print("======================================\n")
+            else:
+                print(f"Using {len(self.topological_features)} pre-computed topological features")
             
             # Create topological feature matrix per point
             n_samples = self.n_samples
@@ -1003,8 +1095,8 @@ class TopologicalDataAnalyzer:
         
         Returns:
         --------
-        numpy.ndarray
-            Array of topological features
+        tuple
+            (features_array, feature_names) - Array of topological features and their names
         """
         start_time = time.time()
         print("Extracting topological features...")
@@ -1014,7 +1106,7 @@ class TopologicalDataAnalyzer:
         feature_names = []
         
         # Check which computations have been done
-        has_persistence = self.persistence_diagrams is not None
+        has_persistence = hasattr(self, 'persistence_diagrams') and self.persistence_diagrams is not None
         has_zigzag = hasattr(self, 'path_zigzag_diagrams') and self.path_zigzag_diagrams is not None
         
         if not has_persistence and not has_zigzag:
@@ -1024,8 +1116,11 @@ class TopologicalDataAnalyzer:
         elif has_zigzag:
             print("Using existing zigzag persistence computations...")
         
+        feature_counts = {"persistence": 0, "zigzag": 0, "network": 0}
+        
         # 1. Features from standard persistence
         if has_persistence:
+            print("Extracting features from persistence diagrams...")
             # Extract features from persistence diagrams
             persistence = self.persistence_diagrams
             
@@ -1077,74 +1172,127 @@ class TopologicalDataAnalyzer:
                         f'persistence_dim{dim}_death_mean': 0
                     }
                 
-                # Add to feature lists
-                for feat_name, feat_val in features.items():
-                    topo_features.append(feat_val)
-                    feature_names.append(feat_name)
-            
-            # Add Betti curve features if available
-            if self.betti_curves is not None:
-                for dim, curve in self.betti_curves['curves'].items():
-                    # Compute statistics on the Betti curve
-                    if len(curve) > 0:
-                        features = {
-                            f'betti_curve_dim{dim}_max': np.max(curve),
-                            f'betti_curve_dim{dim}_mean': np.mean(curve),
-                            f'betti_curve_dim{dim}_integral': np.trapz(curve, self.betti_curves['values'])
-                        }
-                    else:
-                        features = {
-                            f'betti_curve_dim{dim}_max': 0,
-                            f'betti_curve_dim{dim}_mean': 0,
-                            f'betti_curve_dim{dim}_integral': 0
-                        }
-                    
-                    # Add to feature lists
-                    for feat_name, feat_val in features.items():
-                        topo_features.append(feat_val)
-                        feature_names.append(feat_name)
+                # Add features
+                for name, value in features.items():
+                    topo_features.append(value)
+                    feature_names.append(name)
+                    feature_counts["persistence"] += 1
         
         # 2. Features from zigzag persistence
         if has_zigzag:
-            # Extract Betti number profiles from each dimension
+            print("Extracting features from zigzag persistence...")
+            zigzag = self.path_zigzag_diagrams
+            
+            # Extract Betti number statistics for each dimension
             for dim in range(3):  # Dimensions 0, 1, 2 only
                 betti_key = f'betti_{dim}'
-                if betti_key in self.path_zigzag_diagrams['betti_numbers']:
-                    betti_values = self.path_zigzag_diagrams['betti_numbers'][betti_key]
+                if betti_key in zigzag['betti_numbers']:
+                    betti_series = zigzag['betti_numbers'][betti_key]
                     
-                    if betti_values:
+                    if betti_series:
+                        # Compute summary statistics
                         features = {
-                            f'zigzag_dim{dim}_max_betti': np.max(betti_values),
-                            f'zigzag_dim{dim}_mean_betti': np.mean(betti_values),
-                            f'zigzag_dim{dim}_std_betti': np.std(betti_values),
-                            f'zigzag_dim{dim}_changepoints': np.sum(np.abs(np.diff(betti_values)) > 0)
+                            f'zigzag_dim{dim}_betti_mean': np.mean(betti_series),
+                            f'zigzag_dim{dim}_betti_max': np.max(betti_series),
+                            f'zigzag_dim{dim}_betti_min': np.min(betti_series),
+                            f'zigzag_dim{dim}_betti_std': np.std(betti_series),
+                            f'zigzag_dim{dim}_betti_range': np.max(betti_series) - np.min(betti_series)
                         }
                     else:
                         features = {
-                            f'zigzag_dim{dim}_max_betti': 0,
-                            f'zigzag_dim{dim}_mean_betti': 0,
-                            f'zigzag_dim{dim}_std_betti': 0,
-                            f'zigzag_dim{dim}_changepoints': 0
+                            f'zigzag_dim{dim}_betti_mean': 0,
+                            f'zigzag_dim{dim}_betti_max': 0,
+                            f'zigzag_dim{dim}_betti_min': 0,
+                            f'zigzag_dim{dim}_betti_std': 0,
+                            f'zigzag_dim{dim}_betti_range': 0
                         }
-                else:
-                    features = {
-                        f'zigzag_dim{dim}_max_betti': 0,
-                        f'zigzag_dim{dim}_mean_betti': 0,
-                        f'zigzag_dim{dim}_std_betti': 0,
-                        f'zigzag_dim{dim}_changepoints': 0
-                    }
+                    
+                    # Add features
+                    for name, value in features.items():
+                        topo_features.append(value)
+                        feature_names.append(name)
+                        feature_counts["zigzag"] += 1
+            
+            # Add structural transition features
+            transitions = zigzag['betti_numbers']['transitions']
+            if transitions:
+                transition_by_dim = {}
                 
-                # Add to feature lists
-                for feat_name, feat_val in features.items():
-                    topo_features.append(feat_val)
-                    feature_names.append(feat_name)
+                for t in transitions:
+                    dim = t['dimension']
+                    if dim not in transition_by_dim:
+                        transition_by_dim[dim] = []
+                    transition_by_dim[dim].append(t['persistent_paths'])
+                
+                for dim, paths in transition_by_dim.items():
+                    features = {
+                        f'zigzag_dim{dim}_transition_mean': np.mean(paths),
+                        f'zigzag_dim{dim}_transition_max': np.max(paths),
+                        f'zigzag_dim{dim}_transition_total': np.sum(paths),
+                        f'zigzag_dim{dim}_transition_std': np.std(paths)
+                    }
+                    
+                    for name, value in features.items():
+                        topo_features.append(value)
+                        feature_names.append(name)
+                        feature_counts["zigzag"] += 1
         
-        # Convert to array
-        topo_features_array = np.array(topo_features)
+        # 3. Add network statistics as topological features
+        if hasattr(self, 'path_zigzag_diagrams') and self.path_zigzag_diagrams is not None:
+            print("Extracting network statistics as topological features...")
+            networks = self.path_zigzag_diagrams['window_networks']
+            
+            # Compute mean statistics across all window networks
+            network_stats = []
+            for G in networks:
+                stats = {}
+                
+                # Network size and connectivity
+                stats['n_nodes'] = G.number_of_nodes()
+                stats['n_edges'] = G.number_of_edges()
+                stats['density'] = nx.density(G)
+                
+                # Degree statistics
+                degrees = [d for _, d in G.degree()]
+                if degrees:
+                    stats['degree_mean'] = np.mean(degrees)
+                    stats['degree_max'] = np.max(degrees)
+                    stats['degree_std'] = np.std(degrees)
+                else:
+                    stats['degree_mean'] = 0
+                    stats['degree_max'] = 0
+                    stats['degree_std'] = 0
+                
+                network_stats.append(stats)
+            
+            # Compute summary statistics across all windows
+            if network_stats:
+                # Average network statistics
+                avg_stats = {
+                    'network_nodes_mean': np.mean([s['n_nodes'] for s in network_stats]),
+                    'network_edges_mean': np.mean([s['n_edges'] for s in network_stats]),
+                    'network_density_mean': np.mean([s['density'] for s in network_stats]),
+                    'network_degree_mean': np.mean([s['degree_mean'] for s in network_stats]),
+                    'network_degree_max': np.max([s['degree_max'] for s in network_stats])
+                }
+                
+                # Add features
+                for name, value in avg_stats.items():
+                    topo_features.append(value)
+                    feature_names.append(name)
+                    feature_counts["network"] += 1
         
-        print(f"Extracted {len(topo_features)} topological features in {time.time() - start_time:.2f} seconds")
+        total_features = len(topo_features)
+        print(f"Extracted {total_features} topological features in {time.time() - start_time:.2f} seconds")
+        print(f" - {feature_counts['persistence']} persistence diagram features")
+        print(f" - {feature_counts['zigzag']} zigzag persistence features")
+        print(f" - {feature_counts['network']} network statistics features")
         
-        return topo_features_array, feature_names
+        # Convert to numpy array
+        self.topological_features = np.array(topo_features)
+        self.topological_feature_names = feature_names
+        
+        return self.topological_features, self.topological_feature_names
     
     def analyze_regimes(self, output_dir=None):
         """
@@ -1611,7 +1759,7 @@ class TopologicalDataAnalyzer:
             window_times = self.timestamps[window_idx]
             
             # Create distance matrix for this window
-            window_dist = self.temporal_distance_matrix[np.ix_(window_idx, window_idx)]
+            window_dist_matrix = self.temporal_distance_matrix[np.ix_(window_idx, window_idx)]
             
             # Build filtration for this window
             st = SimplexTree()
@@ -1623,8 +1771,8 @@ class TopologicalDataAnalyzer:
             # Add edges
             for j in range(len(window_idx)):
                 for k in range(j+1, len(window_idx)):  # Enforce temporal ordering 
-                    if window_dist[j, k] <= 1.0:  # Threshold
-                        filtration_value = window_dist[j, k]
+                    if window_dist_matrix[j, k] <= 1.0:  # Threshold
+                        filtration_value = window_dist_matrix[j, k]
                         st.insert([j, k], filtration=filtration_value)
             
             # Expand to higher dimensions
@@ -1758,3 +1906,172 @@ class TopologicalDataAnalyzer:
             stability[f'dim_{dim}_overlap_count'] = overlap_features.get(dim, 0)
         
         return stability 
+    
+    def optimize_epsilon_threshold(self, target_index=None, n_trials=10, min_percentile=5, max_percentile=90):
+        """
+        Optimize epsilon threshold using mutual information criteria.
+        
+        Parameters:
+        -----------
+        target_index : int or None
+            Index of target variable for optimization (if None, will look for volatility)
+        n_trials : int
+            Number of epsilon values to test
+        min_percentile : int
+            Minimum percentile of distance distribution to consider
+        max_percentile : int
+            Maximum percentile of distance distribution to consider
+            
+        Returns:
+        --------
+        tuple
+            (optimal_epsilon, min_epsilon, max_epsilon, information_gain)
+        """
+        # Ensure temporal distance matrix is computed
+        if not hasattr(self, 'temporal_distance_matrix') or self.temporal_distance_matrix is None:
+            raise ValueError("Temporal distance matrix must be computed first")
+            
+        # Find a suitable target variable if not provided
+        if target_index is None:
+            # First, look explicitly for 'volatility' in the feature names (case-insensitive)
+            volatility_indices = [i for i, name in enumerate(self.feature_names) 
+                               if 'volatil' in name.lower()]
+            
+            if volatility_indices:
+                target_index = volatility_indices[0]
+                print(f"Found volatility feature at index {target_index}: {self.feature_names[target_index]}")
+            else:
+                # If volatility not found, look for other potential signal features
+                signal_keywords = ['volatility', 'vol', 'vix', 'price', 'return', 'spread']
+                
+                # Print available feature names for debugging
+                print(f"Available features for target selection: {self.feature_names}")
+                
+                for keyword in signal_keywords:
+                    signal_indices = [i for i, name in enumerate(self.feature_names) 
+                                   if keyword.lower() in name.lower()]
+                    if signal_indices:
+                        target_index = signal_indices[0]
+                        print(f"Using {self.feature_names[target_index]} as target for epsilon optimization")
+                        break
+                        
+                # If no signal feature found, fall back to first feature
+                if target_index is None:
+                    target_index = 0
+                    print(f"No target variable found. Using first feature ({self.feature_names[0]}) as target for epsilon optimization.")
+        else:
+            # Verify that the provided index is valid
+            if target_index < 0 or target_index >= len(self.feature_names):
+                print(f"Warning: Provided target_index {target_index} is out of bounds. Using first feature.")
+                target_index = 0
+            else:
+                print(f"Using provided target feature: {self.feature_names[target_index]} at index {target_index}")
+        
+        # Get target variable (feature)
+        target = self.features[:, target_index]
+        
+        # Get the distribution of distances for selecting epsilon values
+        distances = self.temporal_distance_matrix.flatten()
+        distances = distances[distances > 0]  # Exclude zeros (self-distances)
+        
+        # Calculate min and max epsilon for trials
+        min_epsilon = np.percentile(distances, min_percentile)
+        max_epsilon = np.percentile(distances, max_percentile)
+        
+        # Try different epsilon values within range
+        epsilon_values = np.linspace(min_epsilon, max_epsilon, n_trials)
+        information_gains = []
+        
+        for epsilon in epsilon_values:
+            # Create adjacency matrix based on threshold
+            adjacency = (self.temporal_distance_matrix <= epsilon).astype(int)
+            
+            # Estimate mutual information gain with this threshold
+            information_gain = self._estimate_mutual_information_gain(target, adjacency)
+            information_gains.append(information_gain)
+            
+            # Print progress
+            percentile = np.sum(distances <= epsilon) / len(distances) * 100
+            print(f"Epsilon {epsilon:.4f} (percentile {percentile:.1f}%): Information gain = {information_gain:.4f}")
+            
+        # Find optimal epsilon (maximize information gain)
+        optimal_idx = np.argmax(information_gains)
+        optimal_epsilon = epsilon_values[optimal_idx]
+        optimal_gain = information_gains[optimal_idx]
+        
+        # Report optimal value
+        percentile = np.sum(distances <= optimal_epsilon) / len(distances) * 100
+        print(f"Optimal epsilon: {optimal_epsilon:.4f} (at {percentile:.1f} percentile)")
+        print(f"Information gain: {optimal_gain:.4f}")
+        
+        # Recommend a range around the optimal value (±25%)
+        recommended_min = max(optimal_epsilon * 0.75, min_epsilon)
+        recommended_max = min(optimal_epsilon * 1.50, max_epsilon)
+        print(f"Recommended epsilon range: [{recommended_min:.4f}, {recommended_max:.4f}]")
+        
+        return optimal_epsilon, recommended_min, recommended_max, optimal_gain
+    
+    def _estimate_mutual_information_gain(self, target, adjacency, bins=20):
+        """
+        Estimate mutual information gain between target variable and network connectivity.
+        
+        Parameters:
+        -----------
+        target : numpy.ndarray
+            Target variable values
+        adjacency : numpy.ndarray
+            Adjacency matrix representing connectivity
+        bins : int
+            Number of bins for histogram
+            
+        Returns:
+        --------
+        float
+            Normalized mutual information gain
+        """
+        # Get node degree as a connectivity measure
+        degrees = np.sum(adjacency, axis=1)
+        
+        # Simple histogram-based entropy estimation
+        def estimate_entropy(data):
+            hist, _ = np.histogram(data, bins=bins, density=True)
+            hist = hist[hist > 0]  # Remove zeros
+            return -np.sum(hist * np.log(hist))
+        
+        # Estimate H(target)
+        h_target = estimate_entropy(target)
+        
+        # Bin the degrees
+        degree_bins = max(5, min(bins, int(np.sqrt(len(degrees)))))
+        degree_hist, degree_edges = np.histogram(degrees, bins=degree_bins)
+        
+        # For each degree bin, compute entropy of target
+        cond_entropy = 0
+        
+        for i in range(degree_bins):
+            if i < len(degree_edges) - 1:
+                # Get indices of points in this degree bin
+                bin_indices = np.where((degrees >= degree_edges[i]) & 
+                                      (degrees < degree_edges[i+1]))[0]
+                
+                if len(bin_indices) > 0:
+                    # Get target values for this bin
+                    bin_targets = target[bin_indices]
+                    
+                    # Compute entropy for this bin
+                    bin_entropy = estimate_entropy(bin_targets) if len(bin_targets) > 1 else 0
+                    
+                    # Weight by probability of this bin
+                    bin_prob = len(bin_indices) / len(target)
+                    cond_entropy += bin_prob * bin_entropy
+        
+        # Information gain: I(target; connectivity) = H(target) - H(target | connectivity)
+        info_gain = h_target - cond_entropy
+        
+        # Normalize by H(target)
+        if h_target > 0:
+            normalized_gain = info_gain / h_target
+        else:
+            normalized_gain = 0
+            
+        return normalized_gain

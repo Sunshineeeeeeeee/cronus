@@ -23,9 +23,38 @@ class InformationTheoryEnhancer:
     - Feature Significance Ranking
     """
     
-    def __init__(self, feature_array, feature_names, target_col_idx=None):
+    def __init__(self, lambda_ent=0.5, bins=10):
         """
         Initialize the information theory enhancer.
+        
+        Parameters:
+        -----------
+        lambda_ent : float
+            Weight for entropy in feature weighting (default 0.5)
+        bins : int
+            Number of bins for histogram-based estimations (default 10)
+        """
+        # Set parameters
+        self.lambda_ent = lambda_ent
+        self.bins = bins
+        
+        # Information-theoretic measures will be computed when features are provided
+        self.feature_array = None
+        self.feature_names = None
+        self.target_col_idx = None
+        self.n_samples = None
+        self.n_features = None
+        self.entropy = None
+        self.mi_matrix = None
+        self.feature_importance = None
+        self.transfer_entropy = None
+        self.clean_data = None
+        self.scaled_data = None
+        self.scaler = None
+
+    def setup(self, feature_array, feature_names, target_col_idx=None):
+        """
+        Set up the feature array and preprocess it.
         
         Parameters:
         -----------
@@ -33,7 +62,7 @@ class InformationTheoryEnhancer:
             Array of shape (n_samples, n_features) containing extracted features
         feature_names : list
             List of feature names corresponding to columns in feature_array
-        target_col_idx : int
+        target_col_idx : int or None
             Index of the target variable (typically volatility) in feature_array
         """
         self.feature_array = np.copy(feature_array)
@@ -42,7 +71,12 @@ class InformationTheoryEnhancer:
         # If target index not provided, assume volatility is the target (look for it in names)
         if target_col_idx is None:
             try:
-                target_col_idx = self.feature_names.index('volatility')
+                volatility_indices = [i for i, name in enumerate(self.feature_names) 
+                                   if 'volatil' in name.lower()]
+                if volatility_indices:
+                    target_col_idx = volatility_indices[0]
+                else:
+                    target_col_idx = -1  # Default to last column
             except ValueError:
                 target_col_idx = -1  # Default to last column
                 
@@ -52,12 +86,8 @@ class InformationTheoryEnhancer:
         # Preprocess features
         self._preprocess_features()
         
-        # Information-theoretic measures
-        self.entropy = None
-        self.mi_matrix = None
-        self.feature_importance = None
-        self.transfer_entropy = None
-        
+        return self
+
     def _preprocess_features(self):
         """Preprocess features to handle nans and scale data."""
         # Replace nans with mean of column
@@ -317,7 +347,13 @@ class InformationTheoryEnhancer:
             log_py = kde_y.score_samples(y)
             log_pxy = kde_joint.score_samples(np.column_stack([x, y]))
             
-            mi = np.mean(log_pxy - log_px - log_py)
+            # Mutual information can be approximated as E[log(p(x,y)/(p(x)p(y)))]
+            # When using log densities: E[log_pxy - log_px - log_py]
+            # With KDE, this can sometimes be negative due to estimation errors
+            # Take absolute value or max with 0 to ensure non-negativity
+            mi_raw = np.mean(log_pxy - log_px - log_py)
+            mi = max(0, mi_raw)  # Ensure non-negativity
+            
             tail_emphasis = np.maximum(tail_factors[i], tail_factors[j])
             mi *= tail_emphasis
             
@@ -710,28 +746,114 @@ class InformationTheoryEnhancer:
         
         return selected_indices
     
-    def enhance_features(self, n_features=10, include_entropy=True, include_kl=True, 
-                        include_transfer_entropy=False, include_high_signal=True, 
-                        is_training=True, min_snr=2.0):
+    def enhance_features(self, feature_array, feature_names, n_clusters=10, use_entropy=True, 
+                         use_mi=True, use_te=True, use_clustering=True, use_log=True):
         """
-        Create an enhanced feature set using information theory measures.
+        Enhance features using information theory metrics.
+        
+        Parameters:
+        -----------
+        feature_array : numpy.ndarray
+            Array of shape (n_samples, n_features) containing features
+        feature_names : list
+            List of feature names corresponding to columns in feature_array
+        n_clusters : int
+            Number of clusters to form for dimensionality reduction
+        use_entropy : bool
+            Whether to use entropy weighting
+        use_mi : bool
+            Whether to use mutual information
+        use_te : bool
+            Whether to use transfer entropy
+        use_clustering : bool
+            Whether to use clustering-based enhancement
+        use_log : bool
+            Whether to use log transform for skewed features
+            
+        Returns:
+        --------
+        tuple
+            (enhanced_features, enhanced_feature_names)
+            Enhanced feature array and corresponding feature names
+        """
+        start_time = time.time()
+        
+        # Set up the feature array and preprocess it
+        self.setup(feature_array, feature_names)
+        
+        # First, calculate entropy for feature weighting
+        if self.entropy is None and use_entropy:
+            self.estimate_shannon_entropy()
+            
+        # Calculate mutual information matrix
+        if self.mi_matrix is None and use_mi:
+            self.compute_mutual_information_matrix()
+            
+        # Calculate transfer entropy if needed
+        if self.transfer_entropy is None and use_te:
+            self.compute_transfer_entropy()
+        
+        # Calculate feature importance using multiple information criteria
+        self._calculate_feature_importance(lambda_ent=self.lambda_ent)
+        
+        # Select top features based on their importance
+        n_features = min(n_clusters, self.n_features)
+        top_feature_indices = np.argsort(self.feature_importance)[-n_features:]
+        top_features = self.feature_array[:, top_feature_indices]
+        
+        # Create enhanced feature matrix
+        enhanced_features = top_features
+        enhanced_feature_names = [self.feature_names[i] for i in top_feature_indices]
+        
+        # Optionally add entropy-weighted features
+        if use_entropy and self.entropy is not None:
+            # Apply log transformation for skewed features if requested
+            if use_log:
+                log_weights = np.log1p(self.entropy[top_feature_indices] + 1e-10)
+                log_weights = log_weights / (np.max(log_weights) + 1e-10)  # Normalize
+                weighted_features = top_features * log_weights.reshape(1, -1)
+            else:
+                # Min-max normalization of entropy
+                weights = (self.entropy[top_feature_indices] - np.min(self.entropy) + 1e-10) / \
+                         (np.max(self.entropy) - np.min(self.entropy) + 1e-10)
+                weighted_features = top_features * weights.reshape(1, -1)
+            
+            # Add entropy-weighted features
+            enhanced_features = np.hstack((enhanced_features, weighted_features))
+            weighted_names = [f"{name}_ent_weighted" for name in enhanced_feature_names]
+            enhanced_feature_names.extend(weighted_names)
+            
+        print(f"Feature enhancement took {time.time() - start_time:.2f} seconds")
+        print(f"Enhanced features shape: {enhanced_features.shape}")
+        
+        return enhanced_features, enhanced_feature_names
+
+    def enhance_features_adaptive(self, n_features=10, is_training=True, 
+                                 alpha=0.6, beta=0.3, gamma=0.1, lambda_redundancy=0.5,
+                                 use_progressive_selection=True, initial_threshold=0.3):
+        """
+        Enhanced feature selection and enhancement using a progressive, adaptive approach.
+        This implements the proposed optimization strategy with progressive filtering,
+        redundancy minimization, and adaptive enhancement.
         
         Parameters:
         -----------
         n_features : int
-            Number of top features to include
-        include_entropy : bool
-            Whether to include entropy-weighted features
-        include_kl : bool
-            Whether to include KL divergence features
-        include_transfer_entropy : bool
-            Whether to include transfer entropy features
-        include_high_signal : bool
-            Whether to include high signal-to-noise ratio features
+            Number of features to select
         is_training : bool
-            Whether this is the training phase (if False, skip MI computation and use fast approximation)
-        min_snr : float
-            Minimum signal-to-noise ratio for high signal features
+            Whether this is the training phase
+        alpha : float
+            Weight for normalized mutual information in relevance score
+        beta : float
+            Weight for normalized transfer entropy in relevance score
+        gamma : float
+            Weight for signal-to-noise ratio in relevance score
+        lambda_redundancy : float
+            Regularization parameter for redundancy penalty
+        use_progressive_selection : bool
+            Whether to use the progressive selection approach (if False, falls back to original method)
+        initial_threshold : float
+            Threshold for initial feature selection (fraction of max score)
             
         Returns:
         --------
@@ -739,145 +861,968 @@ class InformationTheoryEnhancer:
             (enhanced_features, enhanced_feature_names)
         """
         start_time = time.time()
-        print("Creating enhanced feature set...")
+        print("Creating enhanced feature set using adaptive approach...")
         
-        # Ensure all necessary calculations are done, but only if in training mode
-        if is_training:
-            if self.entropy is None:
-                self.estimate_shannon_entropy()
-            
-            if self.mi_matrix is None:
-                self.compute_mutual_information_matrix()
-            
-            if self.feature_importance is None:
-                self.rank_features_by_importance()
-            
-            if not hasattr(self, 'kl_divergence') and include_kl:
-                self.compute_kl_divergence()
-            
-            if self.transfer_entropy is None and include_transfer_entropy:
-                self.compute_transfer_entropy()
-        else:
-            # In non-training mode, ensure we have entropy if needed
-            if include_entropy and self.entropy is None:
-                self.estimate_shannon_entropy()
-            
-            # Only compute MI if absolutely necessary 
-            if self.mi_matrix is None and self.feature_importance is None:
-                # For large datasets (millions of observations), use histogram approximation
-                if self.n_samples > 100000:
-                    print(f"Large dataset detected ({self.n_samples} samples). Computing mutual information using histogram approximation...")
-                    self.compute_mutual_information_matrix(fast_approximation=True)
-                else:
-                    # For smaller datasets, use histogram approximation
-                    print("Computing mutual information using histogram approximation for non-training phase...")
-                    self.compute_mutual_information_matrix(fast_approximation=True)
-                
-                # Rank features after computing MI
-                self.rank_features_by_importance()
+        # If not in training mode, or not using progressive selection, fall back to original method
+        if not is_training or not use_progressive_selection:
+            return self.enhance_features(
+                n_features=n_features, 
+                is_training=is_training,
+                include_entropy=True,
+                include_kl=True,
+                include_transfer_entropy=True,
+                include_high_signal=True
+            )
         
-        # Select top features
-        top_indices = self.select_top_features(n_features)
+        # Step 1: Compute fast information measures
+        # Always compute entropy as it's relatively inexpensive
+        if self.entropy is None:
+            self.estimate_shannon_entropy()
+        
+        # Step 2: Create and use the progressive feature selector
+        selector = ProgressiveFeatureSelector(
+            self.feature_array,
+            self.feature_names,
+            alpha=alpha, 
+            beta=beta, 
+            gamma=gamma, 
+            lambda_redundancy=lambda_redundancy
+        )
+        
+        # Step 3: Perform progressive selection
+        selected_indices, characteristics = selector.final_feature_selection(
+            n_features=n_features,
+            refine_with_te=True  # Compute transfer entropy for candidates
+        )
+        
+        # Step 4: Get adaptive enhancement strategy for each feature
+        enhancement_strategy = selector.get_adaptive_enhancement_strategy()
+        
+        # Step 5: Apply adaptive enhancement based on feature characteristics
+        # Create base feature set first
+        enhanced_features = self.clean_data[:, selected_indices]
+        enhanced_names = [self.feature_names[idx] for idx in selected_indices]
+        
+        # Track added feature count for logging
+        added_features = {
+            'entropy_weighted': 0,
+            'kl_weighted': 0,
+            'te_weighted': 0,
+            'tail_emphasized': 0
+        }
+        
+        # Apply enhancements based on individual feature characteristics
+        for i, idx in enumerate(selected_indices):
+            strategy = enhancement_strategy[idx]
+            feature_name = self.feature_names[idx]
+            
+            # Apply entropy weighting if recommended
+            if strategy['include_entropy_weighted'] and self.entropy is not None:
+                entropy_weight = self.entropy[idx]
+                if entropy_weight > 0:
+                    entropy_weighted = enhanced_features[:, i] * entropy_weight
+                    enhanced_features = np.column_stack([enhanced_features, entropy_weighted])
+                    enhanced_names.append(f"{feature_name}_ent_weighted")
+                    added_features['entropy_weighted'] += 1
+            
+            # Apply transfer entropy weighting if recommended
+            if strategy['include_te_weighted'] and hasattr(self, 'transfer_entropy') and self.transfer_entropy is not None:
+                te_to_target = self.transfer_entropy[idx, self.target_col_idx]
+                if te_to_target > 0:
+                    te_weighted = enhanced_features[:, i] * te_to_target
+                    enhanced_features = np.column_stack([enhanced_features, te_weighted])
+                    enhanced_names.append(f"{feature_name}_te_weighted")
+                    added_features['te_weighted'] += 1
+            
+            # Apply KL weighting if recommended
+            if strategy['include_kl_weighted'] and hasattr(self, 'kl_divergence') and self.kl_divergence is not None:
+                if idx < self.kl_divergence.shape[1]:
+                    kl_feature = self.kl_divergence[:, idx]
+                    if len(kl_feature) == enhanced_features.shape[0]:
+                        kl_weighted = enhanced_features[:, i] * (1 + np.log1p(kl_feature))
+                        enhanced_features = np.column_stack([enhanced_features, kl_weighted])
+                        enhanced_names.append(f"{feature_name}_kl_weighted")
+                        added_features['kl_weighted'] += 1
+            
+            # Apply tail emphasis if recommended
+            if strategy['include_tail_emphasis']:
+                feature = self.scaled_data[:, idx].reshape(-1, 1)
+                tail_factor, _ = self._adjust_for_heavy_tails(feature)
+                if tail_factor > 1.0:  # Only apply if there's significant tail effect
+                    tail_weighted = enhanced_features[:, i] * tail_factor
+                    enhanced_features = np.column_stack([enhanced_features, tail_weighted])
+                    enhanced_names.append(f"{feature_name}_tail_emphasized")
+                    added_features['tail_emphasized'] += 1
+        
+        print(f"Adaptive feature enhancement completed in {time.time() - start_time:.2f} seconds")
+        print(f"Base features: {len(selected_indices)}")
+        print(f"Added features: entropy-weighted: {added_features['entropy_weighted']}, "
+              f"TE-weighted: {added_features['te_weighted']}, "
+              f"KL-weighted: {added_features['kl_weighted']}, "
+              f"tail-emphasized: {added_features['tail_emphasized']}")
+        print(f"Total enhanced feature set contains {enhanced_features.shape[1]} features")
+        
+        return enhanced_features, enhanced_names
+
+    def enhance_features_batch(self, n_features=10, include_entropy=True):
+        """
+        Lightweight feature enhancement method optimized for batch processing.
+        Uses fast histogram approximations and simplified enhancement to maximize throughput.
+        
+        Parameters:
+        -----------
+        n_features : int
+            Number of features to select
+        include_entropy : bool
+            Whether to include entropy weighting
+            
+        Returns:
+        --------
+        tuple
+            (enhanced_features, enhanced_feature_names)
+        """
+        start_time = time.time()
+        print("Creating batch-optimized feature set...")
+        
+        # Ensure entropy is computed (fast computation)
+        if self.entropy is None:
+            self.estimate_shannon_entropy()
+        
+        # Create a ProgressiveFeatureSelector for fast selection
+        selector = ProgressiveFeatureSelector(self.feature_array, self.feature_names)
+        
+        # Use fast feature selection optimized for batch processing
+        selected_indices = selector.fast_feature_selection(
+            n_features=n_features,
+            include_redundancy=True
+        )
         
         # Create base feature set
-        enhanced_features = self.clean_data[:, top_indices]
-        enhanced_names = [self.feature_names[idx] for idx in top_indices]
+        enhanced_features = self.clean_data[:, selected_indices]
+        enhanced_names = [self.feature_names[idx] for idx in selected_indices]
         
-        # In non-training mode, we only return the base features to match training dimensions
-        if not is_training:
-            return enhanced_features, enhanced_names
-        
-        # Add additional features only during training phase
-        # Add entropy-weighted features if requested
+        # Only apply entropy weighting if requested (other enhancements are skipped for speed)
         if include_entropy and self.entropy is not None:
-            entropy_weights = self.entropy[top_indices] / np.sum(self.entropy[top_indices])
-            entropy_weighted = enhanced_features * entropy_weights.reshape(1, -1)
+            # Get entropy values for selected features
+            feature_entropy = self.entropy[selected_indices]
             
-            enhanced_features = np.column_stack([enhanced_features, entropy_weighted])
-            enhanced_names.extend([f"{name}_ent_weighted" for name in enhanced_names[:len(top_indices)]])
-        
-        # Add KL divergence features if requested
-        if include_kl and hasattr(self, 'kl_divergence'):
-            kl_features = self.kl_divergence[:, top_indices]
-            
-            enhanced_features = np.column_stack([enhanced_features, kl_features])
-            enhanced_names.extend([f"{name}_kl" for name in enhanced_names[:len(top_indices)]])
-        
-        # Add transfer entropy features if requested
-        if include_transfer_entropy and self.transfer_entropy is not None:
-            # Get transfer entropy values for each feature with the target (volatility)
-            if self.target_col_idx is not None:
-                te_values = self.transfer_entropy[:, self.target_col_idx]
-                # Use only top features
-                te_values = te_values[top_indices]
-                # Weight features by their transfer entropy
-                te_weighted = enhanced_features[:, :len(top_indices)] * te_values.reshape(1, -1)
+            # Normalize entropy weights
+            total_entropy = np.sum(feature_entropy)
+            if total_entropy > 0:
+                entropy_weights = feature_entropy / total_entropy
                 
-                enhanced_features = np.column_stack([enhanced_features, te_weighted])
-                enhanced_names.extend([f"{name}_te_weighted" for name in enhanced_names[:len(top_indices)]])
+                # Create entropy-weighted features
+                entropy_weighted = enhanced_features * entropy_weights.reshape(1, -1)
+                enhanced_features = np.column_stack([enhanced_features, entropy_weighted])
+                enhanced_names.extend([f"{name}_ent_weighted" for name in enhanced_names[:len(selected_indices)]])
         
-        # Add high signal-to-noise features if requested
-        if include_high_signal and self.mi_matrix is not None:
-            high_signal_features = []
-            high_signal_names = []
+        print(f"Batch feature enhancement completed in {time.time() - start_time:.2f} seconds")
+        print(f"Enhanced feature set contains {enhanced_features.shape[1]} features")
+        
+        return enhanced_features, enhanced_names
+
+    def _calculate_feature_importance(self, lambda_ent=0.5, lambda_mi=0.5):
+        """
+        Calculate feature importance using a combination of entropy and mutual information.
+        
+        Parameters:
+        -----------
+        lambda_ent : float
+            Weight for entropy in importance calculation
+        lambda_mi : float
+            Weight for mutual information in importance calculation
             
-            # First compute signal-to-noise ratio for each feature
-            for j in range(self.n_features):
-                # Only process top features
-                if j not in top_indices:
+        Returns:
+        --------
+        numpy.ndarray
+            Array of feature importance scores
+        """
+        if self.entropy is None:
+            self.estimate_shannon_entropy()
+            
+        if self.mi_matrix is None:
+            self.compute_mutual_information_matrix()
+            
+        # Normalize entropy
+        norm_entropy = (self.entropy - np.min(self.entropy) + 1e-10) / (np.max(self.entropy) - np.min(self.entropy) + 1e-10)
+        
+        # For MI, use the average MI with other features if no target
+        if self.target_col_idx is not None and self.target_col_idx >= 0:
+            # Use MI with target
+            mi_with_target = self.mi_matrix[:, self.target_col_idx]
+            # Normalize MI
+            norm_mi = (mi_with_target - np.min(mi_with_target) + 1e-10) / (np.max(mi_with_target) - np.min(mi_with_target) + 1e-10)
+        else:
+            # Use average MI with other features
+            avg_mi = np.zeros(self.n_features)
+            for i in range(self.n_features):
+                # Exclude self-MI
+                mi_values = np.delete(self.mi_matrix[i, :], i)
+                avg_mi[i] = np.mean(mi_values)
+            # Normalize average MI
+            norm_mi = (avg_mi - np.min(avg_mi) + 1e-10) / (np.max(avg_mi) - np.min(avg_mi) + 1e-10)
+        
+        # Combine entropy and MI for feature importance
+        self.feature_importance = lambda_ent * norm_entropy + lambda_mi * norm_mi
+        
+        # Ensure all importance values are positive
+        self.feature_importance = np.maximum(self.feature_importance, 0)
+        
+        return self.feature_importance
+
+class ProgressiveFeatureSelector:
+    """
+    Progressive feature selection using information-theoretic measures.
+    Implements a two-stage selection process with lazy evaluation of expensive measures.
+    
+    Key components:
+    1. Fast initial filtering using histogram-based MI and entropy
+    2. Redundancy minimization for feature selection
+    3. Advanced relevance scoring incorporating multiple information measures
+    4. Adaptive enhancement based on feature characteristics
+    """
+    
+    def __init__(self, features, feature_names, alpha=0.6, beta=0.3, gamma=0.1, lambda_redundancy=0.5):
+        """
+        Initialize the progressive feature selector.
+        
+        Parameters:
+        -----------
+        features : numpy.ndarray
+            Feature array of shape (n_samples, n_features)
+        feature_names : list
+            List of feature names
+        alpha : float
+            Weight for normalized mutual information in relevance score
+        beta : float
+            Weight for transfer entropy in relevance score
+        gamma : float
+            Weight for signal-to-noise ratio in relevance score
+        lambda_redundancy : float
+            Regularization parameter for redundancy penalty
+        """
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+        self.lambda_redundancy = lambda_redundancy
+        
+        # Store feature data directly
+        self.feature_array = features
+        self.feature_names = feature_names
+        self.n_samples, self.n_features = features.shape
+        
+        # Try to identify target column (volatility-related feature)
+        self.target_col_idx = -1  # Default to last column
+        for i, name in enumerate(feature_names):
+            if 'volatil' in name.lower():
+                self.target_col_idx = i
+                break
+        
+        # Selection results
+        self.relevance_scores = None
+        self.redundancy_matrix = None
+        self.selected_indices = None
+        self.feature_characteristics = None
+        
+        # Compute information-theoretic metrics for selection
+        self.entropy = None
+        self.mi_matrix = None
+        self.transfer_entropy = None
+
+    def compute_initial_scores(self, fast_approximation=True, bins=64):
+        """
+        Compute initial feature relevance scores using fast approximations.
+        This provides a quick first-pass filtering of features.
+        
+        Parameters:
+        -----------
+        fast_approximation : bool
+            Whether to use fast histogram-based approximations
+        bins : int
+            Number of bins for histogram approximation
+            
+        Returns:
+        --------
+        numpy.ndarray
+            Array of initial relevance scores for each feature
+        """
+        print("Computing initial feature relevance scores...")
+        start_time = time.time()
+        
+        # Ensure entropy is computed (fast computation)
+        if self.entropy is None:
+            self.entropy = self.compute_shannon_entropy()
+        
+        # Compute fast mutual information if needed
+        if self.mi_matrix is None:
+            if fast_approximation:
+                self.mi_matrix = self.compute_mutual_information_histogram(n_bins=bins)
+            else:
+                self.mi_matrix = self.compute_mutual_information_matrix()
+        
+        # Calculate normalized mutual information with target
+        target_entropy = self.entropy[self.target_col_idx]
+        feature_entropy = self.entropy
+        target_mi = self.mi_matrix[:, self.target_col_idx]
+        
+        # Compute normalized mutual information (NMI)
+        nmi = target_mi / np.sqrt(feature_entropy * target_entropy)
+        nmi = np.nan_to_num(nmi, nan=0.0)
+        
+        # Compute signal-to-noise ratio for each feature
+        snr = np.zeros(self.n_features)
+        for j in range(self.n_features):
+            # Signal: MI with target
+            signal = self.mi_matrix[j, self.target_col_idx]
+            
+            # Noise: average MI with other features (excluding self and target)
+            noise_mi = np.delete(self.mi_matrix[j, :], [j, self.target_col_idx])
+            noise = np.mean(noise_mi) if len(noise_mi) > 0 else 0
+            
+            # Compute SNR
+            snr[j] = signal / (noise + 1e-10)
+        
+        # Combine into initial relevance score (without transfer entropy)
+        # We'll add transfer entropy later for promising features
+        initial_scores = self.alpha * nmi + self.gamma * snr / np.max(snr)
+        
+        print(f"Initial scoring completed in {time.time() - start_time:.2f} seconds")
+        print(f"Top 5 features by initial score:")
+        top_indices = np.argsort(-initial_scores)[:5]
+        for idx in top_indices:
+            print(f"  {self.feature_names[idx]}: {initial_scores[idx]:.4f}")
+            
+        return initial_scores
+    
+    def compute_feature_redundancy(self, candidate_indices):
+        """
+        Compute redundancy between features to minimize information overlap.
+        
+        Parameters:
+        -----------
+        candidate_indices : list
+            Indices of candidate features to analyze for redundancy
+            
+        Returns:
+        --------
+        numpy.ndarray
+            Redundancy matrix for candidate features
+        """
+        n_candidates = len(candidate_indices)
+        redundancy = np.zeros((n_candidates, n_candidates))
+        
+        # Use MI to compute normalized redundancy
+        for i, idx_i in enumerate(candidate_indices):
+            for j, idx_j in enumerate(candidate_indices):
+                if i == j:
                     continue
                     
-                # Signal strength: mutual information with target
-                signal = self.mi_matrix[j, self.target_col_idx]
+                # Mutual information between features
+                mi_ij = self.mi_matrix[idx_i, idx_j]
                 
-                # Noise estimate: average MI with non-target features
-                noise_mi = np.delete(self.mi_matrix[j, :], [j, self.target_col_idx])
-                noise = np.mean(noise_mi)
+                # Normalize by minimum entropy
+                h_i = self.entropy[idx_i]
+                h_j = self.entropy[idx_j]
+                min_entropy = min(h_i, h_j)
                 
-                # Compute SNR
-                snr = signal / (noise + 1e-10)
-                
-                if snr >= min_snr:
-                    feature_name = self.feature_names[j]
-                    # Get the raw feature
-                    feature = self.scaled_data[:, j]
+                if min_entropy > 0:
+                    # Redundancy is normalized mutual information between features
+                    redundancy[i, j] = mi_ij / min_entropy
                     
-                    try:
-                        # Create high signal feature variations
-                        if hasattr(self, 'kl_divergence') and j < self.kl_divergence.shape[1]:
-                            # 1. KL-weighted feature - check shape compatibility first
-                            kl_feature = self.kl_divergence[:, j]
-                            if len(kl_feature) == len(feature):
-                                kl_weighted = feature * (1 + np.log1p(kl_feature))
-                                high_signal_features.append(kl_weighted)
-                                high_signal_names.append(f"{feature_name}_high_signal_kl")
-                        
-                        # 2. Tail-emphasized feature
-                        tail_factor, _ = self._adjust_for_heavy_tails(feature.reshape(-1, 1))
-                        tail_weighted = feature * tail_factor
-                        high_signal_features.append(tail_weighted)
-                        high_signal_names.append(f"{feature_name}_high_signal_tail")
-                        
-                        # 3. Information-ratio feature
-                        info_ratio = signal / (np.sum(noise_mi) + 1e-10)
-                        info_weighted = feature * info_ratio
-                        high_signal_features.append(info_weighted)
-                        high_signal_names.append(f"{feature_name}_high_signal_info")
-                    except Exception as e:
-                        print(f"Warning: Error creating high signal features for {feature_name}: {str(e)}")
-                        continue
-            
-            if high_signal_features:
-                try:
-                    # Combine and normalize high signal features
-                    high_signal_data = np.column_stack(high_signal_features)
-                    high_signal_data = StandardScaler().fit_transform(high_signal_data)
-                    enhanced_features = np.column_stack([enhanced_features, high_signal_data])
-                    enhanced_names.extend(high_signal_names)
-                except Exception as e:
-                    print(f"Warning: Error combining high signal features: {str(e)}")
-                    print("Continuing without high signal features")
+        return redundancy
         
-        print(f"Feature enhancement completed in {time.time() - start_time:.2f} seconds")
-        print(f"Enhanced feature set contains {enhanced_features.shape[1]} features")
-        return enhanced_features, enhanced_names 
+    def first_stage_selection(self, initial_threshold=0.3, max_candidates=30):
+        """
+        Perform first-stage feature selection using initial scores.
+        
+        Parameters:
+        -----------
+        initial_threshold : float
+            Threshold for initial feature selection (fraction of max score)
+        max_candidates : int
+            Maximum number of candidate features to retain
+            
+        Returns:
+        --------
+        list
+            Indices of candidate features passing first-stage selection
+        """
+        # Compute initial scores if not already done
+        if self.relevance_scores is None:
+            self.relevance_scores = self.compute_initial_scores()
+        
+        # Calculate threshold value
+        threshold = initial_threshold * np.max(self.relevance_scores)
+        
+        # Select features above threshold
+        candidates = np.where(self.relevance_scores >= threshold)[0]
+        
+        # Limit number of candidates if needed
+        if len(candidates) > max_candidates:
+            candidates = np.argsort(-self.relevance_scores)[:max_candidates]
+            
+        print(f"First-stage selection: {len(candidates)} candidates from {self.n_features} features")
+        return sorted(candidates)
+    
+    def compute_transfer_entropy_for_candidates(self, candidate_indices):
+        """
+        Compute transfer entropy selectively for candidate features.
+        
+        Parameters:
+        -----------
+        candidate_indices : list
+            Indices of features to compute transfer entropy for
+            
+        Returns:
+        --------
+        numpy.ndarray
+            Transfer entropy matrix for candidate features
+        """
+        if self.transfer_entropy is None:
+            # Create a reduced version of the feature array with only candidates
+            # and target to speed up computation
+            reduced_features = np.zeros((self.n_samples, len(candidate_indices) + 1))
+            
+            # Add candidate features
+            for i, idx in enumerate(candidate_indices):
+                reduced_features[:, i] = self.feature_array[:, idx]
+                
+            # Add target as the last column
+            reduced_features[:, -1] = self.feature_array[:, self.target_col_idx]
+            
+            # Create temporary enhancer for transfer entropy computation
+            temp_names = [self.feature_names[idx] for idx in candidate_indices] + [self.feature_names[self.target_col_idx]]
+            temp_enhancer = InformationTheoryEnhancer(reduced_features, temp_names, target_col_idx=len(candidate_indices))
+            
+            # Compute transfer entropy only for this reduced set
+            temp_enhancer.estimate_shannon_entropy()
+            te_matrix = temp_enhancer.compute_transfer_entropy(lag=1)
+            
+            return te_matrix
+        else:
+            # If transfer entropy is already computed for all features, extract the subset
+            full_te = self.transfer_entropy
+            # Add target to candidate indices if not already included
+            if self.target_col_idx not in candidate_indices:
+                indices = candidate_indices + [self.target_col_idx]
+            else:
+                indices = candidate_indices
+                
+            # Extract submatrix
+            return full_te[np.ix_(indices, indices)]
+    
+    def compute_enhancement_potential(self, candidate_indices, te_matrix):
+        """
+        Compute enhancement potential for features based on transfer entropy.
+        
+        Parameters:
+        -----------
+        candidate_indices : list
+            Indices of candidate features
+        te_matrix : numpy.ndarray
+            Transfer entropy matrix for candidate features
+            
+        Returns:
+        --------
+        numpy.ndarray
+            Enhancement potential scores for candidate features
+        """
+        enhancement_potential = np.zeros(len(candidate_indices))
+        
+        # Identify target index in the transfer entropy matrix
+        target_idx = len(candidate_indices)  # If target is the last column in the reduced matrix
+        
+        for i, idx in enumerate(candidate_indices):
+            # Transfer entropy from feature to target
+            te_to_target = te_matrix[i, target_idx]
+            
+            # Mutual information with target
+            mi_with_target = self.mi_matrix[idx, self.target_col_idx]
+            
+            # Enhancement potential: ratio of TE to MI, higher means more causal information
+            if mi_with_target > 0:
+                enhancement_potential[i] = te_to_target / mi_with_target
+            
+        return enhancement_potential
+    
+    def final_feature_selection(self, n_features=10, refine_with_te=True):
+        """
+        Perform final feature selection using a greedy approach to maximize
+        relevance and minimize redundancy.
+        
+        Parameters:
+        -----------
+        n_features : int
+            Number of features to select
+        refine_with_te : bool
+            Whether to refine scores using transfer entropy
+            
+        Returns:
+        --------
+        tuple
+            (selected_indices, feature_characteristics) where feature_characteristics
+            contains information about each selected feature for adaptive enhancement
+        """
+        print(f"Performing final feature selection to select {n_features} features...")
+        start_time = time.time()
+        
+        # First stage selection to get candidates
+        candidates = self.first_stage_selection()
+        
+        # Refine scores with transfer entropy if requested
+        if refine_with_te:
+            print("Computing transfer entropy for candidate features...")
+            te_matrix = self.compute_transfer_entropy_for_candidates(candidates)
+            
+            # Compute enhancement potential for each feature
+            enhancement_potential = self.compute_enhancement_potential(candidates, te_matrix)
+            
+            # Update relevance scores with transfer entropy component
+            for i, idx in enumerate(candidates):
+                # TE from feature to target, normalized by entropy
+                if idx < len(self.entropy) and self.entropy[idx] > 0:
+                    te_component = te_matrix[i, -1] / self.entropy[idx]  # Assuming target is last
+                    self.relevance_scores[idx] += self.beta * te_component
+        
+        # Compute redundancy among candidates
+        redundancy = self.compute_feature_redundancy(candidates)
+        
+        # Store redundancy for later use
+        self.redundancy_matrix = redundancy
+        
+        # Greedy selection of features
+        selected = []
+        remaining = set(candidates)
+        
+        # Feature characteristics for adaptive enhancement
+        characteristics = {}
+        
+        # Keep track of indices mapping between candidates and original features
+        candidate_to_idx = {i: idx for i, idx in enumerate(candidates)}
+        
+        # First, select the feature with highest relevance score
+        best_first = np.argmax([self.relevance_scores[idx] for idx in candidates])
+        first_idx = candidates[best_first]
+        selected.append(first_idx)
+        remaining.remove(first_idx)
+        
+        # Initialize characteristics for first feature
+        characteristics[first_idx] = {
+            'name': self.feature_names[first_idx],
+            'relevance': self.relevance_scores[first_idx],
+            'entropy': self.entropy[first_idx] if first_idx < len(self.entropy) else 0,
+            'snr': 0,  # Will be computed later
+            'heavy_tailed': False,  # Will be determined later
+            'te_importance': 0  # Will be updated if TE is available
+        }
+        
+        # Iteratively select remaining features
+        while len(selected) < n_features and remaining:
+            best_score = -float('inf')
+            best_idx = None
+            
+            for idx in remaining:
+                # Get original index and its position in candidates list
+                candidate_idx = candidates.index(idx)
+                
+                # Calculate redundancy penalty: max redundancy with already selected features
+                redundancy_penalty = 0
+                for sel_idx in selected:
+                    sel_candidate_idx = candidates.index(sel_idx)
+                    if candidate_idx < len(redundancy) and sel_candidate_idx < len(redundancy):
+                        current_redundancy = redundancy[candidate_idx, sel_candidate_idx]
+                        redundancy_penalty = max(redundancy_penalty, current_redundancy)
+                
+                # Apply redundancy penalty to score
+                adjusted_score = self.relevance_scores[idx] - self.lambda_redundancy * redundancy_penalty
+                
+                if adjusted_score > best_score:
+                    best_score = adjusted_score
+                    best_idx = idx
+            
+            if best_idx is not None:
+                selected.append(best_idx)
+                remaining.remove(best_idx)
+                
+                # Store feature characteristics for adaptive enhancement
+                characteristics[best_idx] = {
+                    'name': self.feature_names[best_idx],
+                    'relevance': self.relevance_scores[best_idx],
+                    'entropy': self.entropy[best_idx] if best_idx < len(self.entropy) else 0,
+                    'snr': 0,  # Will be computed later
+                    'heavy_tailed': False,  # Will be determined later
+                    'te_importance': 0  # Will be updated if TE is available
+                }
+        
+        # Compute additional characteristics for selected features
+        for idx in selected:
+            # Compute signal-to-noise ratio
+            signal = self.mi_matrix[idx, self.target_col_idx]
+            noise_mi = np.delete(self.mi_matrix[idx, :], [idx, self.target_col_idx])
+            noise = np.mean(noise_mi) if len(noise_mi) > 0 else 0
+            snr = signal / (noise + 1e-10)
+            characteristics[idx]['snr'] = snr
+            
+            # Check if heavy-tailed
+            feature = self.feature_array[:, idx]
+            try:
+                k = kurtosis(feature)
+                characteristics[idx]['heavy_tailed'] = k > 2.0
+            except:
+                characteristics[idx]['heavy_tailed'] = False
+            
+            # Update transfer entropy importance if available
+            if refine_with_te and hasattr(self, 'transfer_entropy') and self.transfer_entropy is not None:
+                te_to_target = self.transfer_entropy[idx, self.target_col_idx]
+                characteristics[idx]['te_importance'] = te_to_target
+        
+        # Store results
+        self.selected_indices = selected
+        self.feature_characteristics = characteristics
+        
+        print(f"Final feature selection completed in {time.time() - start_time:.2f} seconds")
+        print(f"Selected {len(selected)} features with adaptive characteristics")
+        
+        # Print selected features and their properties
+        print("\nSelected features:")
+        for i, idx in enumerate(selected):
+            char = characteristics[idx]
+            print(f"{i+1}. {char['name']} (relevance: {char['relevance']:.4f}, "
+                  f"SNR: {char['snr']:.2f}, heavy-tailed: {char['heavy_tailed']})")
+        
+        return selected, characteristics
+    
+    def get_adaptive_enhancement_strategy(self):
+        """
+        Determine which enhancement techniques to apply to each selected feature.
+        
+        Returns:
+        --------
+        dict
+            Enhancement strategy for each selected feature
+        """
+        if self.selected_indices is None or self.feature_characteristics is None:
+            raise ValueError("Feature selection must be performed first")
+            
+        enhancement_strategy = {}
+        
+        for idx in self.selected_indices:
+            char = self.feature_characteristics[idx]
+            
+            # Initialize strategy with base feature inclusion
+            strategy = {
+                'include_base': True,
+                'include_entropy_weighted': False,
+                'include_kl_weighted': False,
+                'include_te_weighted': False,
+                'include_tail_emphasis': False
+            }
+            
+            # Apply entropy weighting to high-entropy features
+            if char['entropy'] > np.median([self.feature_characteristics[i]['entropy'] 
+                                           for i in self.selected_indices]):
+                strategy['include_entropy_weighted'] = True
+            
+            # Apply TE weighting to features with high causal influence
+            if char['te_importance'] > 0.01:
+                strategy['include_te_weighted'] = True
+            
+            # Apply tail emphasis to heavy-tailed features
+            if char['heavy_tailed']:
+                strategy['include_tail_emphasis'] = True
+            
+            # Consider KL divergence for features with temporal dynamics
+            # This would need additional analysis, so we'll use a placeholder condition
+            if hasattr(self, 'mi_matrix') and self.mi_matrix is not None:
+                # Check if KL values are significant for this feature
+                if idx < self.mi_matrix.shape[1]:
+                    kl_values = self.mi_matrix[:, idx]
+                    if np.mean(kl_values) > 0.1:  # Arbitrary threshold
+                        strategy['include_kl_weighted'] = True
+            
+            enhancement_strategy[idx] = strategy
+        
+        return enhancement_strategy
+    
+    def fast_feature_selection(self, n_features=10, include_redundancy=False):
+        """
+        Fast feature selection for extension batch processing.
+        Uses only histogram-based MI estimation for efficiency.
+        
+        Parameters:
+        -----------
+        n_features : int
+            Number of features to select
+        include_redundancy : bool
+            Whether to include redundancy minimization (slower but more effective)
+            
+        Returns:
+        --------
+        list
+            Indices of selected features
+        """
+        print("Performing fast feature selection for batch processing...")
+        start_time = time.time()
+        
+        # Ensure entropy is computed (fast computation)
+        if self.entropy is None:
+            self.entropy = self.compute_shannon_entropy()
+        
+        # Compute fast mutual information if needed
+        if self.mi_matrix is None:
+            self.mi_matrix = self.compute_mutual_information_histogram()
+            
+        # Calculate normalized mutual information with target
+        target_entropy = self.entropy[self.target_col_idx]
+        feature_entropy = self.entropy
+        target_mi = self.mi_matrix[:, self.target_col_idx]
+        
+        # Compute normalized mutual information (NMI)
+        nmi = target_mi / np.sqrt(feature_entropy * target_entropy)
+        nmi = np.nan_to_num(nmi, nan=0.0)
+        
+        if not include_redundancy:
+            # Simple approach: select top features by NMI only
+            selected = np.argsort(-nmi)[:n_features]
+        else:
+            # More advanced approach with redundancy minimization
+            # First select top candidate features (30% more than needed)
+            n_candidates = min(int(n_features * 1.3) + 2, self.n_features)
+            candidates = np.argsort(-nmi)[:n_candidates]
+            
+            # Compute redundancy among candidates
+            redundancy = self.compute_feature_redundancy(candidates)
+            
+            # Greedy selection with redundancy minimization
+            selected = []
+            remaining = set(candidates)
+            
+            # First, select the feature with highest NMI
+            best_first = np.argmax([nmi[idx] for idx in candidates])
+            first_idx = candidates[best_first]
+            selected.append(first_idx)
+            remaining.remove(first_idx)
+            
+            # Iteratively select remaining features
+            lambda_redundancy = 0.3  # Lower weight for redundancy in fast selection
+            
+            while len(selected) < n_features and remaining:
+                best_score = -float('inf')
+                best_idx = None
+                
+                for idx in remaining:
+                    # Calculate redundancy penalty: max redundancy with already selected features
+                    redundancy_penalty = 0
+                    
+                    for sel_idx in selected:
+                        # Find these indices in the candidates list
+                        sel_candidate_idx = np.where(candidates == sel_idx)[0][0]
+                        idx_candidate_idx = np.where(candidates == idx)[0][0]
+                        
+                        if idx_candidate_idx < len(redundancy) and sel_candidate_idx < len(redundancy):
+                            current_redundancy = redundancy[idx_candidate_idx, sel_candidate_idx]
+                            redundancy_penalty = max(redundancy_penalty, current_redundancy)
+                    
+                    # Apply redundancy penalty to NMI score
+                    adjusted_score = nmi[idx] - lambda_redundancy * redundancy_penalty
+                    
+                    if adjusted_score > best_score:
+                        best_score = adjusted_score
+                        best_idx = idx
+                
+                if best_idx is not None:
+                    selected.append(best_idx)
+                    remaining.remove(best_idx)
+        
+        print(f"Fast feature selection completed in {time.time() - start_time:.2f} seconds")
+        print(f"Selected {len(selected)} features")
+        
+        return list(selected)
+
+    def compute_shannon_entropy(self, bins=10):
+        """
+        Compute Shannon entropy for each feature using histogram approximation.
+        
+        Parameters:
+        -----------
+        bins : int
+            Number of bins for histogram
+            
+        Returns:
+        --------
+        numpy.ndarray
+            Entropy values for each feature
+        """
+        n_features = self.feature_array.shape[1]
+        entropy = np.zeros(n_features)
+        
+        for i in range(n_features):
+            # Get feature values
+            x = self.feature_array[:, i]
+            
+            # Create histogram
+            hist, _ = np.histogram(x, bins=bins, density=True)
+            
+            # Remove zeros and calculate entropy
+            hist = hist[hist > 0]
+            entropy[i] = -np.sum(hist * np.log(hist)) / bins
+            
+        return entropy
+    
+    def compute_mutual_information_histogram(self, n_bins=64, max_sample_size=100000):
+        """
+        Compute mutual information using histogram-based approximation.
+        
+        Parameters:
+        -----------
+        n_bins : int
+            Number of bins for histogram
+        max_sample_size : int
+            Maximum sample size to use for computation
+            
+        Returns:
+        --------
+        numpy.ndarray
+            Mutual information matrix
+        """
+        # Check if we need to subsample (for memory efficiency with huge datasets)
+        if self.n_samples > max_sample_size:
+            indices = np.random.choice(self.n_samples, max_sample_size, replace=False)
+            data = self.feature_array[indices]
+        else:
+            data = self.feature_array
+            
+        n_features = data.shape[1]
+        mi_matrix = np.zeros((n_features, n_features))
+        
+        # Compute mutual information for each pair of features
+        for i in range(n_features):
+            for j in range(i, n_features):
+                if i == j:
+                    # Self-mutual information is entropy
+                    if self.entropy is not None:
+                        mi_matrix[i, i] = self.entropy[i]
+                    else:
+                        x = data[:, i]
+                        hist, _ = np.histogram(x, bins=n_bins, density=True)
+                        hist = hist[hist > 0]
+                        mi_matrix[i, i] = -np.sum(hist * np.log(hist)) / n_bins
+                else:
+                    # Compute mutual information between features i and j
+                    x = data[:, i]
+                    y = data[:, j]
+                    
+                    # Create 2D histogram
+                    hist_2d, _, _ = np.histogram2d(x, y, bins=n_bins)
+                    
+                    # Normalize to get joint probability
+                    hist_2d = hist_2d / float(np.sum(hist_2d))
+                    
+                    # Compute marginal probabilities
+                    hist_x = np.sum(hist_2d, axis=1)
+                    hist_y = np.sum(hist_2d, axis=0)
+                    
+                    # Compute mutual information
+                    mi = 0.0
+                    for k in range(n_bins):
+                        for l in range(n_bins):
+                            if hist_2d[k, l] > 0 and hist_x[k] > 0 and hist_y[l] > 0:
+                                mi += hist_2d[k, l] * np.log(hist_2d[k, l] / (hist_x[k] * hist_y[l]))
+                                
+                    # Store in matrix (symmetric)
+                    mi_matrix[i, j] = mi
+                    mi_matrix[j, i] = mi
+                    
+        return mi_matrix
+        
+    def compute_mutual_information_matrix(self):
+        """
+        Wrapper for compatibility with enhancer method.
+        
+        Returns:
+        --------
+        numpy.ndarray
+            Mutual information matrix
+        """
+        return self.compute_mutual_information_histogram()
+
+    def select_features(self, n_features=10, include_redundancy=False):
+        """
+        Select features using two-stage process.
+        
+        Parameters:
+        -----------
+        n_features : int
+            Number of features to select
+        include_redundancy : bool
+            Whether to include redundancy minimization
+            
+        Returns:
+        --------
+        list
+            Indices of selected features
+        """
+        # First stage: initial scoring and filtering
+        candidate_indices = self.first_stage_selection(initial_threshold=0.2, max_candidates=min(30, self.n_features))
+        
+        # If we only need a fast selection without redundancy minimization
+        if not include_redundancy or len(candidate_indices) <= n_features:
+            # Simply return top n_features from candidates
+            if len(candidate_indices) <= n_features:
+                return candidate_indices
+            else:
+                # Compute initial scores if not done yet
+                if self.relevance_scores is None:
+                    self.relevance_scores = self.compute_initial_scores()
+                # Get top n_features by relevance score
+                return sorted(candidate_indices[:n_features])
+        
+        # Compute redundancy matrix for candidates
+        redundancy = self.compute_feature_redundancy(candidate_indices)
+        
+        # Final feature selection
+        selected = []
+        remaining = candidate_indices.copy()
+        
+        # First, select the most relevant feature
+        if self.relevance_scores is None:
+            self.relevance_scores = self.compute_initial_scores()
+        
+        # Get index of most relevant feature
+        best_idx = remaining[np.argmax([self.relevance_scores[i] for i in remaining])]
+        selected.append(best_idx)
+        remaining.remove(best_idx)
+        
+        # Select remaining features
+        while len(selected) < n_features and remaining:
+            best_score = -float('inf')
+            best_feature = None
+            
+            for idx in remaining:
+                # Relevance score
+                relevance = self.relevance_scores[idx]
+                
+                # Redundancy penalty
+                redundancy_penalty = 0
+                for sel_idx in selected:
+                    # Find positions in candidate_indices
+                    sel_pos = candidate_indices.index(sel_idx)
+                    idx_pos = candidate_indices.index(idx)
+                    redundancy_penalty += redundancy[sel_pos, idx_pos]
+                
+                # Compute final score
+                if len(selected) > 0:
+                    redundancy_penalty /= len(selected)
+                score = relevance - self.lambda_redundancy * redundancy_penalty
+                
+                if score > best_score:
+                    best_score = score
+                    best_feature = idx
+            
+            if best_feature is not None:
+                selected.append(best_feature)
+                remaining.remove(best_feature)
+            else:
+                break
+        
+        return selected 

@@ -17,15 +17,13 @@ class MicrostructureFeatureEngine:
     - Momentum Features (short-term momentum, RSI, etc.)
     """
     
-    def __init__(self, tick_data, timestamp_col='Timestamp', price_col='Value', 
+    def __init__(self, timestamp_col='Timestamp', price_col='Value', 
                  volume_col='Volume', volatility_col='Volatility'):
         """
-        Initialize the feature engine with tick data.
+        Initialize the feature engine.
         
         Parameters:
         -----------
-        tick_data : pandas.DataFrame
-            DataFrame with tick data
         timestamp_col : str
             Column name for timestamps
         price_col : str
@@ -35,27 +33,90 @@ class MicrostructureFeatureEngine:
         volatility_col : str
             Column name for volatility values
         """
-        self.df = tick_data.copy()
         self.timestamp_col = timestamp_col
         self.price_col = price_col
         self.volume_col = volume_col
         self.volatility_col = volatility_col
-        self.window_sizes = None  
+        self.window_sizes = None
+        self.df = None
+        self.features = {}
+        
+    def extract_features(self, tick_data, window_sizes=[10, 50, 100], normalize=True, include_original=True,
+                        min_periods=None):
+        """
+        Extract features from tick data.
+        
+        Parameters:
+        -----------
+        tick_data : pandas.DataFrame
+            DataFrame with tick data
+        window_sizes : list
+            List of window sizes for feature calculation
+        normalize : bool
+            Whether to normalize features
+        include_original : bool
+            Whether to include original price and volume
+        min_periods : dict or None
+            Minimum number of observations required for rolling calculations
+            
+        Returns:
+        --------
+        pandas.DataFrame
+            DataFrame with extracted features
+        """
+        self.df = tick_data.copy()
+        self.window_sizes = window_sizes
+        self.features = {}
+        
+        # Set default min_periods if not provided
+        if min_periods is None:
+            min_periods = {size: max(3, size // 5) for size in window_sizes}
         
         # Ensure timestamp is in datetime format
-        if self.df[timestamp_col].dtype != 'datetime64[ns]':
-            self.df[timestamp_col] = pd.to_datetime(self.df[timestamp_col])
+        if self.df[self.timestamp_col].dtype != 'datetime64[ns]':
+            self.df[self.timestamp_col] = pd.to_datetime(self.df[self.timestamp_col])
             
         # Calculate log returns
-        self.df['log_price'] = np.log(self.df[price_col])
+        self.df['log_price'] = np.log(self.df[self.price_col])
         self.df['return'] = self.df['log_price'].diff().fillna(0)
         self.df['return_sign'] = np.sign(self.df['return'])
         
         # Calculate time deltas in seconds
-        self.df['time_delta'] = self.df[timestamp_col].diff().dt.total_seconds().fillna(0.001)
+        self.df['time_delta'] = self.df[self.timestamp_col].diff().dt.total_seconds().fillna(0.001)
         
-        # Initialize feature dictionary to store all computed features
-        self.features = {}
+        # Extract all features
+        self._compute_time_features()
+        self.compute_microstructure_features(window_sizes)
+        self.compute_order_flow_metrics(window_sizes)
+        self.compute_dmi_features(window_sizes)
+        
+        # Create feature DataFrame
+        feature_df = pd.DataFrame()
+        
+        # Add original features if requested
+        if include_original:
+            feature_df[self.price_col] = self.df[self.price_col]
+            feature_df[self.volume_col] = self.df[self.volume_col]
+            if self.volatility_col in self.df.columns:
+                feature_df[self.volatility_col] = self.df[self.volatility_col]
+        
+        # Add computed features
+        for name, values in self.features.items():
+            feature_df[name] = values
+            
+        # Replace NaN values with 0 (can be adjusted based on requirements)
+        feature_df = feature_df.fillna(0)
+        
+        # Normalize features if requested
+        if normalize:
+            for col in feature_df.columns:
+                if col not in [self.price_col, self.volume_col, self.volatility_col]:
+                    mean = feature_df[col].mean()
+                    std = feature_df[col].std()
+                    if std > 0:
+                        feature_df[col] = (feature_df[col] - mean) / std
+        
+        return feature_df
         
     def _compute_time_features(self, window_size=100):
         """

@@ -1,41 +1,72 @@
-import numpy as np
-import pandas as pd
 import os
 import time
-from datetime import datetime
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+from ripser import ripser
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+from sklearn.cluster import KMeans, SpectralClustering
+from sklearn.mixture import GaussianMixture
+from sklearn.model_selection import train_test_split
+from xgboost import DMatrix, XGBClassifier, train as xgb_train
 
-from .microstructure_features import MicrostructureFeatureEngine
 from .information_theory import InformationTheoryEnhancer
 from .topological_analyzer import TopologicalDataAnalyzer
+from .microstructure_features import MicrostructureFeatureEngine
 
 class TDAVolatilityPipeline:
     """
-    Integrated pipeline that combines microstructure feature extraction,
-    information theory enhancement, and topological data analysis to
-    identify volatility regimes in financial time series data.
+    Pipeline for identifying volatility regimes using topological data analysis.
     
-    This pipeline streamlines the process from raw data to regime identification
-    by integrating the three core components:
-    1. MicrostructureFeatureEngine: Extracts comprehensive microstructure features
-    2. InformationTheoryEnhancer: Enhances features using information theory
-    3. TopologicalDataAnalyzer: Performs topological analysis to identify regimes
+    This pipeline combines microstructure feature extraction, information theory,
+    and topological data analysis to identify market volatility regimes.
     """
     
-    def __init__(self):
-        """Initialize the TDA volatility pipeline."""
+    def __init__(self, input_df=None, timestamp_col='timestamp', price_col='price', 
+                volume_col='volume', verbose=True):
+        """
+        Initialize the pipeline.
+        
+        Parameters:
+        -----------
+        input_df : pandas.DataFrame or None
+            Input dataframe with market data
+        timestamp_col : str
+            Name of timestamp column
+        price_col : str
+            Name of price column
+        volume_col : str
+            Name of volume column
+        verbose : bool
+            Whether to print verbose output
+        """
+        self.input_df = input_df
+        self.timestamp_col = timestamp_col
+        self.price_col = price_col
+        self.volume_col = volume_col
+        self.verbose = verbose
+        
+        # Initialize components
         self.feature_engine = None
         self.info_enhancer = None
         self.tda = None
         
-        # Store data and feature information
-        self.input_df = None
+        # Data containers
         self.features = None
         self.feature_names = None
         self.enhanced_features = None
         self.enhanced_feature_names = None
-        
-        # Store regime information
         self.regimes = None
+        self.extension_model = None
+        
+        # Initialize any necessary directories
+        os.makedirs('output', exist_ok=True)
+        
+        if verbose:
+            print("TDA Volatility Pipeline initialized")
         
         # Configuration parameters
         self.window_sizes = None
@@ -80,7 +111,7 @@ class TDAVolatilityPipeline:
         pandas.DataFrame
             DataFrame with original data plus regime labels
         """
-        print("\nStarting TDA volatility regime pipeline at", datetime.now().strftime("%H:%M:%S"))
+        print("\nStarting TDA volatility regime pipeline at", time.strftime("%H:%M:%S"))
         total_start_time = time.time()
         
         # Store parameters
@@ -103,32 +134,21 @@ class TDAVolatilityPipeline:
         enhancement_params = kwargs.get('enhancement_params', {})
         tda_params = kwargs.get('tda_params', {})
         
-        # Step 1: Run TDA on training batch
-        self.input_df = training_df
+        # Add timestamps to TDA params if not already present
+        if 'timestamps' not in tda_params:
+            tda_params['timestamps'] = training_df[timestamp_col].values
         
-        # Extract microstructure features
-        print("\n--- STEP 1: Extracting Microstructure Features ---")
-        feature_start_time = time.time()
-        self._extract_features(**feature_params)
-        print(f"Feature extraction completed in {time.time() - feature_start_time:.2f} seconds")
-        
-        # Enhance features using information theory
-        print("\n--- STEP 2: Enhancing Features with Information Theory ---")
-        enhancement_start_time = time.time()
-        self._enhance_features(**enhancement_params)
-        print(f"Feature enhancement completed in {time.time() - enhancement_start_time:.2f} seconds")
-        
-        # Perform topological data analysis
-        print("\n--- STEP 3: Performing Topological Data Analysis ---")
-        tda_start_time = time.time()
-        self._perform_tda_analysis(n_regimes=n_regimes, **tda_params)
-        print(f"Topological analysis completed in {time.time() - tda_start_time:.2f} seconds")
-        
-        # Train XGBoost model for extension
-        print("\n--- STEP 4: Training Regime Extension Model ---")
-        extension_start_time = time.time()
-        self._train_regime_extension_model()
-        print(f"Extension model training completed in {time.time() - extension_start_time:.2f} seconds")
+        # Train the pipeline on the training batch
+        self.train(
+            input_df=training_df,
+            timestamp_col=timestamp_col,
+            price_col=price_col, 
+            volume_col=volume_col,
+            n_regimes=n_regimes,
+            feature_params=feature_params,
+            enhancement_params=enhancement_params,
+            **tda_params
+        )
         
         # Initialize result DataFrame with training results
         result_df = df.copy()
@@ -144,6 +164,10 @@ class TDAVolatilityPipeline:
             n_batches = (n_remaining + batch_size - 1) // batch_size
             print(f"Processing in {n_batches} batches of size {batch_size}")
             
+            # Initialize arrays for aggregating results
+            all_regimes = np.zeros(n_remaining, dtype=int)
+            all_confidences = np.zeros(n_remaining)
+            
             for batch_idx, start_idx in enumerate(range(0, n_remaining, batch_size), 1):
                 batch_start = time.time()
                 end_idx = min(start_idx + batch_size, n_remaining)
@@ -155,127 +179,197 @@ class TDAVolatilityPipeline:
                 # Process batch
                 batch_result = self._process_extension_batch(batch_df)
                 
-                # Store results
-                global_start = training_batch + start_idx
-                global_end = training_batch + end_idx
-                result_df.loc[global_start:global_end-1, 'regime'] = batch_result['regime']
-                result_df.loc[global_start:global_end-1, 'regime_confidence'] = batch_result['regime_confidence']
+                # Store results in arrays
+                all_regimes[start_idx:end_idx] = batch_result['regimes']
+                all_confidences[start_idx:end_idx] = batch_result['confidences']
                 
                 # Print batch statistics
-                regime_counts = np.bincount(batch_result['regime'])
-                print(f"Batch processing time: {time.time() - batch_start:.2f} seconds")
-                print("Batch regime distribution:")
-                for regime, count in enumerate(regime_counts):
-                    print(f"  Regime {regime}: {count:,} ({count/(end_idx-start_idx)*100:.2f}%)")
-                print(f"Average confidence: {np.mean(batch_result['regime_confidence']):.4f}")
-                
-                # Print progress
-                progress = end_idx / n_remaining * 100
-                print(f"Overall progress: {progress:.1f}%")
+                batch_time = time.time() - batch_start
+                samples_per_sec = (end_idx - start_idx) / batch_time
+                print(f"Batch completed in {batch_time:.2f} seconds ({samples_per_sec:.1f} samples/sec)")
+                print(f"Batch regime distribution: {np.bincount(batch_result['regimes'])}")
             
-            extension_time = time.time() - extension_start
-            print(f"\nExtension completed in {extension_time:.2f} seconds ({extension_time/60:.2f} minutes)")
-            print(f"Average processing time per batch: {extension_time/n_batches:.2f} seconds")
+            # Update result DataFrame with batch results
+            result_df.loc[training_batch:, 'regime'] = all_regimes
+            result_df.loc[training_batch:, 'regime_confidence'] = all_confidences
+            
+            print(f"Extension completed in {time.time() - extension_start:.2f} seconds")
+            print(f"Final regime distribution: {np.bincount(all_regimes)}")
         
+        # Report total time
         total_time = time.time() - total_start_time
-        print(f"\nTotal execution time: {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
-        
-        # Print final regime distribution
-        regime_counts = result_df['regime'].value_counts().sort_index()
-        print("\nFinal regime distribution:")
-        for regime, count in regime_counts.items():
-            print(f"Regime {regime}: {count:,} ({count/len(result_df)*100:.2f}%)")
+        print(f"\nTDA volatility regime pipeline completed in {total_time:.2f} seconds")
+        print(f"Processed {len(df):,} total observations at {len(df)/total_time:.1f} samples/sec")
         
         return result_df
     
-    def _extract_features(self, **kwargs):
+    def _extract_features(self, window_sizes=None, normalize=True, include_original=True,
+                         min_periods=None, df=None, **kwargs):
         """
-        Extract microstructure features from tick data.
+        Extract microstructure features from input data.
         
         Parameters:
         -----------
+        window_sizes : list or None
+            List of window sizes to use for feature extraction
+        normalize : bool
+            Whether to normalize features
+        include_original : bool
+            Whether to include original price and volume
+        min_periods : int or None
+            Minimum number of observations required for rolling calculations
+        df : pandas.DataFrame or None
+            Input dataframe with market data (if None, uses self.input_df)
         **kwargs : dict
-            Additional parameters to pass to feature extraction
+            Additional parameters to pass to feature engine
         """
-        # Initialize feature engine
-        self.feature_engine = MicrostructureFeatureEngine(
-            self.input_df,
-            timestamp_col=self.timestamp_col,
-            price_col=self.price_col,
-            volume_col=self.volume_col,
-            volatility_col=self.volatility_col
-        )
+        # Use provided df or fall back to self.input_df
+        input_df = df if df is not None else self.input_df
+        
+        if input_df is None:
+            raise ValueError("Input dataframe must be provided either through df parameter or self.input_df")
+            
+        # Set default window sizes if not provided
+        if window_sizes is None:
+            window_sizes = self.window_sizes if self.window_sizes is not None else [10, 50, 100]
+            
+        # Set minimum periods if not provided
+        if min_periods is None:
+            min_periods = {size: max(3, size // 5) for size in window_sizes}
+        
+        # Initialize feature engine if needed
+        if self.feature_engine is None:
+            self.feature_engine = MicrostructureFeatureEngine(
+                #data=input_df,
+                timestamp_col=self.timestamp_col,
+                price_col=self.price_col,
+                volume_col=self.volume_col
+            )
+            
+        print(f"Extracting microstructure features with window sizes: {window_sizes}")
         
         # Extract features
-        self.features, self.feature_names, self.input_df = self.feature_engine.extract_all_features(
-            window_sizes=self.window_sizes
+        start_time = time.time()
+        feature_df = self.feature_engine.extract_features(
+            input_df,
+            window_sizes=window_sizes,
+            normalize=normalize,
+            include_original=include_original,
+            min_periods=min_periods,
+            **kwargs
         )
         
-        print(f"Extracted {len(self.feature_names)} microstructure features")
+        # Store features for further analysis
+        self.features = feature_df.values
+        self.feature_names = feature_df.columns.tolist()
+        
+        print(f"Extracted {len(self.feature_names)} features from {len(input_df)} observations")
+        print(f"Feature extraction time: {time.time() - start_time:.2f} seconds")
+        
+        # Return for convenient chaining
         return self
     
-    def _enhance_features(self, n_features=10, include_entropy=True, include_kl=True,
-                         include_transfer_entropy=True, include_high_signal=True,
-                         min_snr=2.0, **kwargs):
+    def _enhance_features(self, n_components=10, use_clustering=True, use_log=True,
+                         use_mi=True, use_te=True, use_entropy=True,
+                         lambda_ent=0.5, bins=10, **kwargs):
         """
         Enhance features using information theory.
         
         Parameters:
         -----------
-        n_features : int
-            Number of top features to include
-        include_entropy : bool
-            Whether to include entropy-weighted features
-        include_kl : bool
-            Whether to include KL divergence features
-        include_transfer_entropy : bool
-            Whether to include transfer entropy features
-        include_high_signal : bool
-            Whether to include high signal-to-noise features
-        min_snr : float
-            Minimum signal-to-noise ratio for high signal features
-        **kwargs : dict
-            Additional parameters to pass to feature enhancement
+        n_components : int
+            Number of components to extract
+        use_clustering : bool
+            Whether to use clustering for feature enhancement
+        use_log : bool
+            Whether to use log transformation
+        use_mi : bool
+            Whether to use mutual information
+        use_te : bool
+            Whether to use transfer entropy
+        use_entropy : bool
+            Whether to use entropy weighting
+        lambda_ent : float
+            Weight for entropy in weighting scheme
+        bins : int
+            Number of bins for entropy estimation
         """
-        if self.features is None:
-            raise ValueError("Features must be extracted first")
+        if self.features is None or self.feature_names is None:
+            raise ValueError("Features and feature names must be set before enhancement")
         
-        # Initialize information theory enhancer
-        self.info_enhancer = InformationTheoryEnhancer(
-            self.features,
-            self.feature_names
-        )
+        # Initialize information theory enhancer if needed
+        if self.info_enhancer is None:
+            # Create a new enhancer
+            self.info_enhancer = InformationTheoryEnhancer(
+                lambda_ent=lambda_ent,
+                bins=bins
+            )
+            # Initialize the enhancer with our data
+            self.info_enhancer.setup(
+                self.features,
+                self.feature_names
+            )
+            
+        # Determine whether to use progressive feature selection
+        use_progressive_selection = len(self.feature_names) > 30
         
-        # Estimate entropy
-        self.info_enhancer.estimate_shannon_entropy()
+        if use_progressive_selection:
+            print(f"\n=== Using Progressive Feature Selection: {len(self.feature_names)} features ===")
+            # Create a ProgressiveFeatureSelector instance
+            from .information_theory import ProgressiveFeatureSelector
+            feature_selector = ProgressiveFeatureSelector(
+                features=self.features,
+                feature_names=self.feature_names
+            )
+            
+            # Perform progressive feature selection
+            selected_indices = feature_selector.select_features(
+                n_features=min(30, len(self.feature_names)), 
+                include_redundancy=True
+            )
+            
+            # Filter features and names
+            selected_features = self.features[:, selected_indices]
+            selected_feature_names = [self.feature_names[i] for i in selected_indices]
+            
+            print(f"Selected {len(selected_indices)} features from {len(self.feature_names)}")
+            print(f"Selected features: {selected_feature_names}")
+            
+            # Set these as the new features
+            self.features = selected_features
+            self.feature_names = selected_feature_names
+            
+            # Re-initialize enhancer with selected features
+            self.info_enhancer.setup(self.features, self.feature_names)
+            
+        # Enhance features with information theory
+        start_time = time.time()
         
-        # Compute mutual information
-        self.info_enhancer.compute_mutual_information_matrix()
-        
-        # Compute transfer entropy if needed
-        if include_transfer_entropy:
-            self.info_enhancer.compute_transfer_entropy()
-        
-        # Enhance features
+        print("Enhancing features with information theory...")
         self.enhanced_features, self.enhanced_feature_names = self.info_enhancer.enhance_features(
-            n_features=n_features,
-            include_entropy=include_entropy,
-            include_kl=include_kl,
-            include_transfer_entropy=include_transfer_entropy,
-            include_high_signal=include_high_signal,
-            min_snr=min_snr,
-            is_training=True
+            self.features,
+            self.feature_names,
+            use_entropy=use_entropy,
+            use_mi=use_mi,
+            use_te=use_te,
+            use_clustering=use_clustering,
+            n_clusters=n_components,
+            use_log=use_log
         )
         
-        print(f"Enhanced features: {len(self.enhanced_feature_names)} features selected")
+        print(f"Feature enhancement took {time.time() - start_time:.2f} seconds")
+        print(f"Enhanced features shape: {self.enhanced_features.shape}")
+        print(f"Enhanced feature names: {self.enhanced_feature_names}")
+        
+        # Return for convenient chaining
         return self
     
-    def _perform_tda_analysis(self, n_regimes=4, alpha=0.5, beta=0.1, lambda_info=1.0,
+    def _perform_tda_analysis(self, n_regimes=3, alpha=0.5, beta=0.1, lambda_info=1.0,
                              min_epsilon=None, max_epsilon=None, num_steps=10,
                              window_size=150, overlap=75, max_path_length=2,
-                             **kwargs):
+                             optimize_epsilon=True, **kwargs):
         """
-        Perform topological data analysis to identify regimes.
+        Perform topological data analysis on the enhanced features.
         
         Parameters:
         -----------
@@ -286,52 +380,150 @@ class TDAVolatilityPipeline:
         beta : float
             Decay rate for temporal distance
         lambda_info : float
-            Weight for information-theoretic component
+            Weight for information theory enhancement
         min_epsilon, max_epsilon : float or None
-            Distance thresholds for network construction. If None, will be set adaptively.
+            Distance thresholds for network construction
         num_steps : int
             Number of steps in epsilon range
         window_size : int
-            Size of sliding window for zigzag persistence (increased for efficiency)
+            Size of sliding window for zigzag persistence
         overlap : int
-            Number of points to overlap between windows (50% of window_size)
+            Number of points to overlap between windows
         max_path_length : int
             Maximum path length for path complex
-        **kwargs : dict
-            Additional parameters to pass to TDA analysis
+        optimize_epsilon : bool
+            Whether to optimize epsilon threshold using information theory
         """
-        if self.enhanced_features is None:
-            raise ValueError("Features must be enhanced first")
+        # Create timestamps if not provided
+        timestamps = kwargs.get('timestamps', None)
+        if timestamps is None:
+            timestamps = np.arange(len(self.enhanced_features))
         
-        # Extract timestamps for temporal weighting
-        timestamps = self.input_df[self.timestamp_col].values
+        # Convert pandas DatetimeIndex to numpy array if needed
+        if hasattr(timestamps, 'to_numpy'):
+            timestamps = timestamps.to_numpy()
         
         # Initialize topological data analyzer
         self.tda = TopologicalDataAnalyzer(
-            self.enhanced_features,
-            self.enhanced_feature_names,
+            feature_array=self.enhanced_features,
+            feature_names=self.enhanced_feature_names,
             timestamp_array=timestamps
         )
         
-        # Transform MI and TE matrices to match enhanced feature dimensions if needed
+        # Transform MI and TE matrices to match enhanced features
+        # We need to create a mapping from original features to enhanced features
         transformed_mi_matrix = None
         transformed_te_matrix = None
         
-        if hasattr(self, 'mutual_info_matrix') and self.mutual_info_matrix is not None:
-            if self.mutual_info_matrix.shape[0] != len(self.enhanced_feature_names):
-                # Transform MI matrix to match enhanced features
-                feature_indices = [i for i, name in enumerate(self.feature_names) 
-                                 if name in self.enhanced_feature_names]
-                transformed_mi_matrix = self.mutual_info_matrix[feature_indices][:, feature_indices]
-                print(f"Transformed MI matrix to match enhanced features: {transformed_mi_matrix.shape}")
+        if hasattr(self, 'info_enhancer') and self.info_enhancer is not None:
+            # Check if mutual information matrix exists
+            if hasattr(self.info_enhancer, 'mi_matrix') and self.info_enhancer.mi_matrix is not None:
+                # Original MI matrix shape
+                original_mi = self.info_enhancer.mi_matrix
+                print(f"Original MI matrix shape: {original_mi.shape}")
+                print(f"Enhanced feature count: {len(self.enhanced_feature_names)}")
+                
+                # Check if the dimensions match (before enhancement)
+                if original_mi.shape[0] == len(self.feature_names):
+                    # Get indices of original features that correspond to enhanced features
+                    matching_indices = []
+                    for name in self.enhanced_feature_names:
+                        # Skip entropy-weighted features (second half of enhanced features)
+                        if '_ent_weighted' in name or '_te_weighted' in name:
+                            continue
+                        
+                        # Find index in original features
+                        try:
+                            idx = self.feature_names.index(name)
+                            matching_indices.append(idx)
+                        except ValueError:
+                            continue
+                    
+                    # Create transformed MI matrix with only matching features
+                    if matching_indices:
+                        # Select subset of original MI matrix
+                        transformed_mi_matrix = original_mi[np.ix_(matching_indices, matching_indices)]
+                        
+                        # Duplicate rows/columns for entropy-weighted features
+                        full_size = len(self.enhanced_feature_names)
+                        full_matrix = np.zeros((full_size, full_size))
+                        
+                        # Fill in values from original matrix
+                        n_base = len(matching_indices)
+                        full_matrix[:n_base, :n_base] = transformed_mi_matrix
+                        
+                        # Copy values for derived features
+                        if n_base < full_size // 2:
+                            # For entropy-weighted features, copy the MI from original features
+                            full_matrix[n_base:2*n_base, n_base:2*n_base] = transformed_mi_matrix
+                            full_matrix[:n_base, n_base:2*n_base] = transformed_mi_matrix
+                            full_matrix[n_base:2*n_base, :n_base] = transformed_mi_matrix
+                        
+                        transformed_mi_matrix = full_matrix
+                        print(f"Found {len(matching_indices)} matching features in original matrix")
+                        print(f"Created transformed MI matrix of shape {transformed_mi_matrix.shape}")
+                        print(f"MI value range: [{transformed_mi_matrix.min():.4f}, {transformed_mi_matrix.max():.4f}]")
+                    else:
+                        print("Error: No matching features found for MI matrix transformation")
+                else:
+                    print(f"Error: MI matrix shape ({original_mi.shape}) doesn't match feature count ({len(self.feature_names)})")
+            
+            # Check if transfer entropy matrix exists
+            if hasattr(self.info_enhancer, 'transfer_entropy') and self.info_enhancer.transfer_entropy is not None:
+                # Original TE matrix shape
+                original_te = self.info_enhancer.transfer_entropy
+                print(f"Original TE matrix shape: {original_te.shape}")
+                
+                # Check if the dimensions match (before enhancement)
+                if original_te.shape[0] == len(self.feature_names):
+                    # Get indices of original features that correspond to enhanced features
+                    matching_indices = []
+                    for name in self.enhanced_feature_names:
+                        # Skip entropy-weighted features (second half of enhanced features)
+                        if '_ent_weighted' in name or '_te_weighted' in name:
+                            continue
+                        
+                        # Find index in original features
+                        try:
+                            idx = self.feature_names.index(name)
+                            matching_indices.append(idx)
+                        except ValueError:
+                            continue
+                    
+                    # Create transformed TE matrix with only matching features
+                    if matching_indices:
+                        # Select subset of original TE matrix
+                        transformed_te_matrix = original_te[np.ix_(matching_indices, matching_indices)]
+                        
+                        # Duplicate rows/columns for entropy-weighted features
+                        full_size = len(self.enhanced_feature_names)
+                        full_matrix = np.zeros((full_size, full_size))
+                        
+                        # Fill in values from original matrix
+                        n_base = len(matching_indices)
+                        full_matrix[:n_base, :n_base] = transformed_te_matrix
+                        
+                        # Copy values for derived features
+                        if n_base < full_size // 2:
+                            # For entropy-weighted features, copy the TE from original features
+                            full_matrix[n_base:2*n_base, n_base:2*n_base] = transformed_te_matrix
+                            full_matrix[:n_base, n_base:2*n_base] = transformed_te_matrix
+                            full_matrix[n_base:2*n_base, :n_base] = transformed_te_matrix
+                        
+                        transformed_te_matrix = full_matrix
+                        print(f"Found {len(matching_indices)} matching features in original TE matrix")
+                        print(f"Created transformed TE matrix of shape {transformed_te_matrix.shape}")
+                        print(f"TE value range: [{transformed_te_matrix.min():.4f}, {transformed_te_matrix.max():.4f}]")
+                    else:
+                        print("Error: No matching features found for TE matrix transformation")
+                else:
+                    print(f"Error: TE matrix shape ({original_te.shape}) doesn't match feature count ({len(self.feature_names)})")
         
-        if hasattr(self, 'transfer_entropy') and self.transfer_entropy is not None:
-            if self.transfer_entropy.shape[0] != len(self.enhanced_feature_names):
-                # Transform TE matrix to match enhanced features
-                feature_indices = [i for i, name in enumerate(self.feature_names) 
-                                 if name in self.enhanced_feature_names]
-                transformed_te_matrix = self.transfer_entropy[feature_indices][:, feature_indices]
-                print(f"Transformed TE matrix to match enhanced features: {transformed_te_matrix.shape}")
+        # If we couldn't transform the matrices, print a message and continue without them
+        if transformed_mi_matrix is None:
+            print("No MI matrix transformation needed; using default values")
+        if transformed_te_matrix is None:
+            print("No TE matrix transformation needed; using default values")
         
         # Compute distance matrix with information theory enhancement
         self.tda.compute_temporally_weighted_distance(
@@ -342,15 +534,62 @@ class TDAVolatilityPipeline:
             transfer_entropy=transformed_te_matrix
         )
         
-        # Set adaptive epsilon range based on distance distribution
-        if min_epsilon is None or max_epsilon is None:
-            distances = self.tda.temporal_distance_matrix.flatten()
-            distances = distances[distances > 0]  # Exclude zeros
+        # Find volatility feature index if available
+        target_idx = None
+        
+        # First check if we have a volatility feature in the enhanced features
+        for i, name in enumerate(self.enhanced_feature_names):
+            if 'volatil' in name.lower():
+                target_idx = i
+                print(f"Found volatility in enhanced features: {name}")
+                break
+        
+        # If not found, check for other target candidates
+        if target_idx is None:
+            # Check for price, value, etc.
+            for keyword in ['price', 'value', 'return', 'vol']:
+                for i, name in enumerate(self.enhanced_feature_names):
+                    if keyword.lower() in name.lower():
+                        target_idx = i
+                        print(f"Using {name} as target for epsilon optimization")
+                        break
+                if target_idx is not None:
+                    break
             
-            # Use more conservative percentiles for epsilon range
-            min_epsilon = np.percentile(distances, 5)  # 5th percentile
-            max_epsilon = np.percentile(distances, 85)  # 85th percentile (reduced from 95)
-            print(f"Using adaptive epsilon range: [{min_epsilon:.4f}, {max_epsilon:.4f}]")
+            # If still not found, check if we have volatility column in original features
+            if target_idx is None and hasattr(self, 'volatility_col') and self.volatility_col is not None:
+                if self.volatility_col in self.feature_names:
+                    # Find closest related feature in enhanced features
+                    vol_idx = self.feature_names.index(self.volatility_col)
+                    vol_name = self.feature_names[vol_idx]
+                    print(f"Found volatility in original features: {vol_name}")
+                    # Look for any enhanced feature that might be related
+                    for i, name in enumerate(self.enhanced_feature_names):
+                        if any(x in name.lower() for x in ['vol', 'price', 'value']):
+                            target_idx = i
+                            print(f"Using {name} as target for epsilon optimization (closest to {vol_name})")
+                            break
+        
+        # Set epsilon thresholds based on optimization or default approach
+        if min_epsilon is None or max_epsilon is None or optimize_epsilon:
+            if optimize_epsilon:
+                print("\n=== Using Information-Theoretic Epsilon Optimization ===")
+                # Use the TDA optimizer directly
+                _, min_epsilon, max_epsilon, _ = self.tda.optimize_epsilon_threshold(
+                    target_index=target_idx,
+                    n_trials=10,
+                    min_percentile=5,
+                    max_percentile=90
+                )
+                print("========================================================\n")
+            else:
+                # Use simple distance-based approach
+                distances = self.tda.temporal_distance_matrix.flatten()
+                distances = distances[distances > 0]  # Exclude zeros
+                
+                min_epsilon = np.percentile(distances, 5)  # 5th percentile
+                max_epsilon = np.percentile(distances, 85)  # 85th percentile
+                print(f"Using adaptive epsilon range: [{min_epsilon:.4f}, {max_epsilon:.4f}]")
         
         # Compute persistent path zigzag homology
         self.tda.compute_persistent_path_zigzag_homology(
@@ -367,6 +606,24 @@ class TDAVolatilityPipeline:
         
         print(f"Identified {n_regimes} volatility regimes")
         return self
+    
+    def _calculate_persistence_diagrams(self, max_dim=2):
+        """Calculate persistence diagrams from the enhanced features."""
+        self.persistence_diagrams = ripser(self.enhanced_features, maxdim=max_dim)["dgms"]
+        return self.persistence_diagrams
+    
+    def _estimate_confidence(self, proba, regimes):
+        """
+        Estimate model confidence based on prediction probability.
+        Combines with persistence stability estimates.
+        """
+        if self.tda and hasattr(self.tda, 'regime_stability'):
+            # Combine model confidence with topological stability
+            confidence = 0.7 * proba + 0.3 * self.tda.regime_stability[regimes]
+        else:
+            confidence = proba
+        
+        return confidence
     
     def _train_regime_extension_model(self, **kwargs):
         """
@@ -554,51 +811,134 @@ class TDAVolatilityPipeline:
         Returns:
         --------
         dict
-            Dictionary containing regime labels and confidence scores
+            Batch processing results
         """
         import xgboost as xgb
         
-        # Extract features for this batch
+        # Create feature engine with the batch data
         feature_engine = MicrostructureFeatureEngine(
-            batch_df,
             timestamp_col=self.timestamp_col,
             price_col=self.price_col,
             volume_col=self.volume_col,
-            volatility_col=self.volatility_col
+            volatility_col=self.volatility_col if hasattr(self, 'volatility_col') else None
         )
         
-        # Extract and enhance features using same parameters as training
-        batch_features, _, _ = feature_engine.extract_all_features(
-            window_sizes=self.window_sizes
+        # Extract features directly using extract_features method
+        print(f"Extracting features from batch with {len(batch_df)} observations...")
+        feature_df = feature_engine.extract_features(
+            tick_data=batch_df,  # Pass batch_df as tick_data parameter
+            window_sizes=self.window_sizes,
+            normalize=True,
+            include_original=True
         )
         
-        # Create info enhancer for feature enhancement
-        info_enhancer = InformationTheoryEnhancer(
-            batch_features,
-            self.feature_names
-        )
+        # Convert to numpy arrays
+        batch_features = feature_df.values
+        batch_feature_names = feature_df.columns.tolist()
         
-        # Enhance features using same parameters as training
-        # Use histogram approximation for faster computation in batch processing
-        batch_enhanced_features, _ = info_enhancer.enhance_features(
-            n_features=len(self.extension_feature_names),
-            is_training=False,  # Don't recompute MI matrices
-            include_entropy=True,
-            include_kl=False,  # Skip KL divergence for batch processing
-            include_transfer_entropy=False  # Skip transfer entropy for batch processing
-        )
+        print(f"Extracted {batch_features.shape[1]} features from batch")
+        
+        # Determine if we need to use adaptive enhancement
+        # Only use adaptive enhancement if the original training used it and the batch features are similar
+        use_adaptive = False
+        if (hasattr(self, 'info_enhancer') and self.info_enhancer is not None and 
+            hasattr(self, 'extension_model') and self.extension_model is not None):
+            # We have an enhancer and a model, but need to check if it's safe to use
+            use_adaptive = set(self.feature_names).issubset(set(batch_feature_names))
+        
+        # Print info about processing method
+        print(f"Feature count: {batch_features.shape[1]}")
+        print(f"Using {'adaptive' if use_adaptive else 'standard'} enhancement")
+        
+        # Ensure we have model_features attribute set
+        if not hasattr(self, 'model_features'):
+            self.model_features = self.enhanced_features.shape[1] if hasattr(self, 'enhanced_features') else batch_features.shape[1]
+            print(f"Setting model_features to {self.model_features}")
+            
+        # For processing batches, it's safer to just use the model feature count directly
+        # This avoids issues with feature selection and entropy calculations
+        if use_adaptive:
+            try:
+                # Try adaptive enhancement with safety checks
+                print("Creating batch-optimized feature set...")
+                
+                # Match batch features to the original features used in training
+                matching_indices = []
+                original_feature_set = set(self.feature_names)
+                
+                # First, find indices that match the original feature set
+                for i, name in enumerate(batch_feature_names):
+                    if name in original_feature_set:
+                        matching_indices.append(i)
+                
+                # If we don't have enough matching features, append some additional ones
+                if len(matching_indices) < self.model_features // 2:
+                    print(f"Warning: Only found {len(matching_indices)} matching features from training set")
+                    # Add more features to reach at least half the model dimensions
+                    remaining = list(set(range(len(batch_feature_names))) - set(matching_indices))
+                    matching_indices.extend(remaining[:max(0, (self.model_features // 2) - len(matching_indices))])
+                
+                # Take only the first model_features indices (or fewer if not enough available)
+                matching_indices = matching_indices[:min(len(matching_indices), self.model_features)]
+                print(f"Selected {len(matching_indices)} features based on original training features")
+                
+                # Create a selected feature array
+                batch_selected = batch_features[:, matching_indices]
+                selected_names = [batch_feature_names[i] for i in matching_indices]
+                
+                # If we need additional features, we'll add zeros (padding)
+                if batch_selected.shape[1] < self.model_features:
+                    padding_size = self.model_features - batch_selected.shape[1]
+                    print(f"Adding {padding_size} padding features to match model dimensions")
+                    padding = np.zeros((batch_selected.shape[0], padding_size))
+                    batch_enhanced = np.hstack([batch_selected, padding])
+                    enhanced_names = selected_names + [f"padding_{i}" for i in range(padding_size)]
+                else:
+                    batch_enhanced = batch_selected
+                    enhanced_names = selected_names
+                
+            except Exception as e:
+                print(f"Error during adaptive enhancement: {e}")
+                print("Falling back to standard feature selection")
+                use_adaptive = False
+                
+        if not use_adaptive:
+            # Standard approach: just select the top features up to model_features
+            top_indices = list(range(min(self.model_features, batch_features.shape[1])))
+            batch_enhanced = batch_features[:, top_indices]
+            enhanced_names = [batch_feature_names[i] for i in top_indices]
+            
+            # If we need additional features, we'll add zeros (padding)
+            if batch_enhanced.shape[1] < self.model_features:
+                padding_size = self.model_features - batch_enhanced.shape[1]
+                print(f"Adding {padding_size} padding features to match model dimensions")
+                padding = np.zeros((batch_enhanced.shape[0], padding_size))
+                batch_enhanced = np.hstack([batch_enhanced, padding])
+                enhanced_names = enhanced_names + [f"padding_{i}" for i in range(padding_size)]
+        
+        # Final dimension check
+        if batch_enhanced.shape[1] != self.model_features:
+            print(f"Warning: Dimension mismatch. Expected {self.model_features}, got {batch_enhanced.shape[1]}")
+            # Force the correct dimensions as a last resort
+            if batch_enhanced.shape[1] > self.model_features:
+                batch_enhanced = batch_enhanced[:, :self.model_features]
+            else:
+                padding = np.zeros((batch_enhanced.shape[0], self.model_features - batch_enhanced.shape[1]))
+                batch_enhanced = np.hstack([batch_enhanced, padding])
         
         # Create DMatrix for prediction
-        dbatch = xgb.DMatrix(batch_enhanced_features)
+        dmatrix = xgb.DMatrix(batch_enhanced)
         
-        # Get predictions and probabilities
-        pred_probs = self.extension_model.predict(dbatch)
-        predictions = np.argmax(pred_probs, axis=1)
-        confidences = np.max(pred_probs, axis=1)
+        # Get predictions
+        regime_probs = self.extension_model.predict(dmatrix)
+        regimes = np.argmax(regime_probs, axis=1)
+        confidences = np.max(regime_probs, axis=1)
         
+        # Return results
         return {
-            'regime': predictions,
-            'regime_confidence': confidences
+            'regimes': regimes,
+            'confidences': confidences,
+            'probabilities': regime_probs
         }
     
     def _extend_regimes_to_full_dataset(self, df, batch_size=100000):
@@ -643,10 +983,10 @@ class TDAVolatilityPipeline:
             batch_result = self._process_extension_batch(batch_df)
             
             # Store results
-            all_regimes[start_idx:end_idx] = batch_result['regime']
-            all_confidences[start_idx:end_idx] = batch_result['regime_confidence']
+            all_regimes[start_idx:end_idx] = batch_result['regimes']
+            all_confidences[start_idx:end_idx] = batch_result['confidences']
             
-            print(f"Batch regime distribution: {np.bincount(batch_result['regime'])}")
+            print(f"Batch regime distribution: {np.bincount(batch_result['regimes'])}")
         
         # Add predictions to result DataFrame
         result_df['regime'] = all_regimes
@@ -655,4 +995,125 @@ class TDAVolatilityPipeline:
         print("Regime extension completed")
         print(f"Final regime distribution: {np.bincount(all_regimes)}")
         
-        return result_df 
+        return result_df
+    
+    def train(self, features=None, feature_names=None, 
+             n_regimes=3, alpha=0.5, beta=0.1, lambda_info=1.0,
+             min_epsilon=0.1, max_epsilon=5.0, num_steps=10,
+             window_size=100, overlap=50, max_path_length=2,
+             optimize_epsilon=True, model_type='xgboost', train_size=0.8,
+             input_df=None, timestamp_col=None, price_col=None, volume_col=None,
+             feature_params=None, enhancement_params=None, **kwargs):
+        """
+        Train the volatility regime pipeline with extracted features.
+        
+        Parameters:
+        -----------
+        features : numpy.ndarray or None
+            Extracted features (will extract if None)
+        feature_names : list or None
+            Names of features (will generate if None)
+        n_regimes : int
+            Number of volatility regimes to identify
+        alpha : float
+            Weight for temporal component in distance calculation
+        beta : float
+            Decay rate for temporal component
+        lambda_info : float
+            Weight for information-theoretic enhancement
+        min_epsilon : float
+            Minimum epsilon for filtration
+        max_epsilon : float
+            Maximum epsilon for filtration
+        num_steps : int
+            Number of filtration steps
+        window_size : int
+            Size of sliding window for path persistence
+        overlap : int
+            Overlap between consecutive windows
+        max_path_length : int
+            Maximum length of paths to consider
+        optimize_epsilon : bool
+            Whether to use information-theoretic optimization for epsilon
+        model_type : str
+            Type of model for regime extension ('xgboost' or 'lightgbm')
+        train_size : float
+            Proportion of data to use for training
+        input_df : pandas.DataFrame or None
+            Input dataframe with market data
+        timestamp_col, price_col, volume_col : str or None
+            Column names for timestamp, price, and volume
+        feature_params, enhancement_params : dict or None
+            Parameters for feature extraction and enhancement
+        """
+        # Set timestamp, price, and volume columns if provided
+        if timestamp_col is not None:
+            self.timestamp_col = timestamp_col
+        if price_col is not None:
+            self.price_col = price_col
+        if volume_col is not None:
+            self.volume_col = volume_col
+        
+        # Extract features if needed
+        if input_df is not None:
+            feature_params = feature_params or {}
+            self._extract_features(
+                df=input_df,
+                **feature_params
+            )
+        elif features is not None and feature_names is not None:
+            self.features = features
+            self.feature_names = feature_names
+        else:
+            raise ValueError("Either input_df or (features and feature_names) must be provided")
+        
+        # Set default enhancement parameters
+        default_enhancement_params = {
+            'n_components': kwargs.get('n_components', 10),
+            'use_clustering': kwargs.get('use_clustering', True),
+            'use_log': kwargs.get('use_log', True),
+            'use_mi': kwargs.get('use_mi', True),
+            'use_te': kwargs.get('use_te', True),
+            'use_entropy': kwargs.get('use_entropy', True),
+            'lambda_ent': kwargs.get('lambda_ent', 0.5),
+            'bins': kwargs.get('bins', 10)
+        }
+        enhancement_params = {**default_enhancement_params, **(enhancement_params or {})}
+        
+        # Enhance features
+        self._enhance_features(**enhancement_params)
+        
+        # Store the number of features for later batch processing
+        self.model_features = self.enhanced_features.shape[1]
+        self.extension_feature_names = self.enhanced_feature_names
+
+        # Perform topological data analysis
+        tda_params = {
+            'n_regimes': n_regimes,
+            'alpha': alpha,
+            'beta': beta,
+            'lambda_info': lambda_info,
+            'min_epsilon': min_epsilon,
+            'max_epsilon': max_epsilon,
+            'num_steps': num_steps,
+            'window_size': window_size,
+            'overlap': overlap,
+            'max_path_length': max_path_length,
+            'optimize_epsilon': optimize_epsilon,
+            'timestamps': None if input_df is None else input_df[self.timestamp_col].values
+        }
+        
+        self._perform_tda_analysis(**tda_params)
+        
+        # Train regime extension model
+        print("\nTraining regime extension model...")
+        
+        extension_params = {
+            'model_type': model_type,
+            'train_size': train_size
+        }
+        
+        extension_params.update(kwargs)
+        self._train_regime_extension_model(**extension_params)
+        
+        return self 

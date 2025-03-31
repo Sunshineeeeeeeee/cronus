@@ -501,309 +501,75 @@ class TopologicalDataAnalyzer:
             }
     
     def compute_persistent_path_zigzag_homology(self, window_size=100, overlap=50, max_path_length=2, min_epsilon=0.1, max_epsilon=2.0, num_steps=10, output_dir=None):
-        """
-        Compute persistent path homology with zigzag persistence, specifically designed for sequential market microstructure data.
-        This combines the directed path complex approach with zigzag persistence to capture temporal evolution of market states.
-        
-        Parameters:
-        -----------
-        window_size : int
-            Size of sliding window for state computation
-        overlap : int
-            Number of points to overlap between windows
-        max_path_length : int
-            Maximum length of paths to consider
-        min_epsilon : float
-            Minimum distance threshold
-        max_epsilon : float
-            Maximum distance threshold
-        num_steps : int
-            Number of filtration steps
-        output_dir : str
-            Directory to save output files and plots
-            
-        Returns:
-        --------
-        dict
-            Dictionary containing path zigzag persistence diagrams
-        """
+        """Compute persistent path zigzag homology."""
         start_time = time.time()
-        print("Computing persistent path zigzag homology for market microstructure...")
         
-        try:
-            # Create sequence of directed networks for each window
-            network_start = time.time()
-            networks = []
-            window_indices = []
-            
-            # Pre-compute temporal distance matrix if not already done
-            if self.temporal_distance_matrix is None:
-                self.compute_temporally_weighted_distance()
-                self.temporal_distance_matrix = self.distance_matrix
-                
-            # Ensure distance matrix has no NaN values
-            dist_matrix = np.nan_to_num(self.temporal_distance_matrix)
-            
-            for i in range(0, self.n_samples - window_size + 1, window_size - overlap):
-                # Get window data indices
-                window_idx = list(range(i, min(i + window_size, self.n_samples)))
-                if len(window_idx) < 3:  # Skip too small windows
-                    continue
-                    
-                window_indices.append(window_idx)
-                
-                # Create temporal distance submatrix for this window
-                window_dist_matrix = dist_matrix[np.ix_(window_idx, window_idx)]
-                
-                # Calculate window-specific adaptive epsilon threshold 
-                # This helps prevent identical networks between windows
-                if len(window_idx) > 10:
-                    # Get distance distribution for this window only
-                    flat_dists = window_dist_matrix.flatten()
-                    flat_dists = flat_dists[flat_dists > 0]  # Exclude zeros
-                    
-                    # Use the optimal epsilon as center point, with a window-specific adjustment
-                    # This ensures we prioritize the optimal value that maximizes information gain
-                    window_median = np.median(flat_dists)
-                    global_median = np.median(dist_matrix.flatten()[dist_matrix.flatten() > 0])
-                    
-                    # Adjust optimal epsilon for this window based on median ratio
-                    window_optimal = max_epsilon * (window_median / global_median) if global_median > 0 else max_epsilon
-                    
-                    # Set local range around the optimal value
-                    local_min_epsilon = max(min_epsilon, min(window_optimal * 0.8, np.percentile(flat_dists, 40) if len(flat_dists) > 0 else min_epsilon))
-                    local_max_epsilon = min(max_epsilon * 1.2, max(window_optimal * 1.2, np.percentile(flat_dists, 80) if len(flat_dists) > 0 else max_epsilon))
-                    
-                    # Print the range with the correct ordering (min to max)
-                    min_display = min(local_min_epsilon, local_max_epsilon)
-                    max_display = max(local_min_epsilon, local_max_epsilon)
-                    print(f"Window {len(window_indices)}: Using adaptive epsilon range [{min_display:.4f}, {max_display:.4f}]")
-                else:
-                    local_min_epsilon = min_epsilon
-                    local_max_epsilon = max_epsilon
-                
-                # Create directed network for this window
-                G = nx.DiGraph()
-                
-                # Add nodes
-                for j, idx in enumerate(window_idx):
-                    G.add_node(j, original_idx=idx, features=self.features[idx], timestamp=self.timestamps[idx])
-                
-                # Add edges (respecting temporal ordering)
-                edge_count = 0
-                max_edges_per_node = min(20, len(window_idx) // 3)  # Limit outgoing edges
-                
-                for j in range(len(window_idx)):
-                    # Find all potential edges for this node
-                    potential_edges = []
-                    for k in range(j+1, len(window_idx)):  # Enforce j < k for temporal ordering
-                        dist = window_dist_matrix[j, k]
-                        if dist <= local_max_epsilon:
-                            potential_edges.append((k, dist))
-                    
-                    # Sort by distance (closest first)
-                    potential_edges.sort(key=lambda x: x[1])
-                    
-                    # Add limited number of edges
-                    edges_added = 0
-                    for k, dist in potential_edges:
-                        if dist <= local_min_epsilon or edges_added < max_edges_per_node // 2:
-                            # Weight edges by inverse distance (closer = stronger)
-                            edge_weight = 1.0/max(dist, 1e-10)
-                            G.add_edge(j, k, weight=edge_weight)
-                            edge_count += 1
-                            edges_added += 1
-                            
-                            # Stop when we reach our limit
-                            if edges_added >= max_edges_per_node:
-                                break
-                                
-                # No edges were added - this window might be too sparse
-                if edge_count == 0:
-                    print(f"Warning: No edges created for window {len(window_indices)}. Using nearest neighbor fallback.")
-                    # Fallback to add at least some edges
-                    for j in range(len(window_idx)):
-                        # Add edges to nearest neighbors
-                        dists = [(k, window_dist_matrix[j, k]) for k in range(j+1, len(window_idx))]
-                        dists.sort(key=lambda x: x[1])  # Sort by distance
-                        
-                        # Add edges to 5 nearest neighbors
-                        for k, dist in dists[:min(5, len(dists))]:
-                            G.add_edge(j, k, weight=1.0/max(dist, 1e-10))
-                            edge_count += 1
-                
-                networks.append(G)
-            
-            if not networks:
-                print("No valid windows found. Try reducing window_size or increasing overlap.")
-                return None
-                
-            print(f"Network creation completed in {time.time() - network_start:.2f} seconds")
-            
-            # For each network window, compute path complex
-            print(f"Computing path complexes for {len(networks)} windows...")
-            path_complexes = []
-            for i, G in enumerate(networks):
-                print(f"Computing path complex for window {i+1}/{len(networks)}...")
-                path_complex = self.compute_path_complex(G, max_path_length)
-                path_complexes.append(path_complex)
-                print(f"Window {i+1} path complex sizes: " + ", ".join([f"dim {d}: {len(paths)}" for d, paths in path_complex.items()]))
-            
-            # Initialize zigzag path persistence
-            path_zigzag_diagrams = {
-                'window_diagrams': [],
-                'transitions': [],
-                'betti_numbers': {},
-                'window_indices': window_indices
-            }
-            
-            # Process each dimension
-            dimension_start = time.time()
-            persistence_summary = {0: [], 1: [], 2: []}  # Store persistence info for each dimension
-
-            for dim in range(max_path_length + 1):
-                if dim > 2:  # Skip dimensions higher than 2
-                    continue
-                print(f"Processing homology in dimension {dim}...")
-                dim_start = time.time()
-                betti_series = []
-                
-                # Compute homology for each window
-                for i, path_complex in enumerate(path_complexes):
-                    if dim not in path_complex or not path_complex[dim]:
-                        betti_series.append(0)
-                        continue
-                    
-                    paths = path_complex[dim]
-                    
-                    if dim == 0:
-                        # For 0-dimension, Betti number is number of connected components
-                        betti = nx.number_connected_components(networks[i].to_undirected())
-                        betti_series.append(betti)
-                        persistence_summary[dim].append(betti)
-                        continue
-                        
-                    # Create boundary matrix
-                    n_paths = len(paths)
-                    
-                    if dim-1 not in path_complex or not path_complex[dim-1]:
-                        betti_series.append(0)
-                        continue
-                        
-                    n_boundaries = len(path_complex[dim-1])
-                    boundary_matrix = np.zeros((n_paths, n_boundaries))
-                    
-                    # Fill boundary matrix
-                    for j, path in enumerate(paths):
-                        # Get boundary paths
-                        for k in range(len(path) - 1):
-                            boundary_path = path[:k] + path[k+1:]
-                            try:
-                                boundary_idx = path_complex[dim-1].index(boundary_path)
-                                boundary_matrix[j, boundary_idx] = 1
-                            except ValueError:
-                                continue
-                    
-                    # Compute homology
-                    homology = self._compute_homology_from_boundary(boundary_matrix)
-                    betti = homology['betti']
-                    betti_series.append(betti)
-                    persistence_summary[dim].append(betti)
-                
-                path_zigzag_diagrams[f'betti_{dim}'] = betti_series
-                print(f"Dimension {dim} processing completed in {time.time() - dim_start:.2f} seconds")
-            
-            # Print persistence analysis
-            print("\n=== Persistence Analysis ===")
-            print("Found the following persistent features across windows:")
-            for dim in range(3):
-                persistent_count = sum(1 for b in persistence_summary[dim] if b > 0)
-                avg_betti = np.mean(persistence_summary[dim]) if persistence_summary[dim] else 0
-                max_betti = max(persistence_summary[dim]) if persistence_summary[dim] else 0
-                
-                print(f"\nDimension {dim}:")
-                print(f"- Persistent features found in {persistent_count} out of {len(persistence_summary[dim])} windows")
-                print(f"- Average Betti number: {avg_betti:.2f}")
-                print(f"- Maximum Betti number: {max_betti}")
-                print(f"- Betti number sequence: {persistence_summary[dim]}")
-
-            print("\nPersistence Stability Analysis:")
-            for dim in range(3):
-                betti_series = path_zigzag_diagrams[f'betti_{dim}']
-                if betti_series:
-                    changes = np.diff(betti_series)
-                    stability = 1.0 - (np.count_nonzero(changes) / len(changes)) if len(changes) > 0 else 1.0
-                    print(f"Dimension {dim} stability: {stability:.2%}")
-            print("===========================\n")
-            
-            # Compute zigzag persistence across windows
-            print("Computing transitions between windows...")
-            transition_features = []
-            
-            # For each pair of consecutive windows, analyze transitions
-            for i in range(len(window_indices) - 1):
-                current_window = set(window_indices[i])
-                next_window = set(window_indices[i+1])
-                
-                # Find overlap indices
-                overlap_indices = current_window.intersection(next_window)
-                
-                if not overlap_indices:
-                    continue
-                
-                # Track transitions of paths
-                for dim in range(1, max_path_length + 1):  # Skip 0-dim (just points)
-                    if dim in path_complexes[i] and dim in path_complexes[i+1]:
-                        # Find paths in current window that have elements in the overlap
-                        persistent_paths = []
-                        for path in path_complexes[i][dim]:
-                            # Check if path nodes are in overlap (need original indices)
-                            path_nodes_in_overlap = False
-                            for node in path:
-                                if node < len(networks[i].nodes) and 'original_idx' in networks[i].nodes[node]:
-                                    original_idx = networks[i].nodes[node]['original_idx']
-                                    if original_idx in overlap_indices:
-                                        path_nodes_in_overlap = True
-                                        break
-                            
-                            if path_nodes_in_overlap:
-                                persistent_paths.append(path)
-                        
-                        transition_features.append({
-                            'window_pair': (i, i+1),
-                            'dimension': dim,
-                            'persistent_paths': len(persistent_paths)
-                        })
-            
-            path_zigzag_diagrams['transitions'] = transition_features
-            
-            # Generate epsilon stepping for filtration
-            epsilon_values = np.linspace(min_epsilon, max_epsilon, num_steps)
-            
-            # Store results
-            self.path_zigzag_diagrams = {
-                'window_complexes': path_complexes,
-                'window_networks': networks,
-                'window_indices': window_indices,
-                'betti_numbers': path_zigzag_diagrams,
-                'epsilon_values': epsilon_values,
-                'window_size': window_size,
-                'overlap': overlap
-            }
-            
-            # Generate visualizations
-            if output_dir is not None:
-                self._generate_zigzag_visualizations(output_dir)
-            
-            print(f"Total path zigzag persistence computation completed in {time.time() - start_time:.2f} seconds")
-            return self.path_zigzag_diagrams
-            
-        except Exception as e:
-            print(f"Error in path zigzag persistence computation: {str(e)}")
-            import traceback
-            traceback.print_exc()
+        # Create windows
+        window_indices = []
+        for start in range(0, len(self.feature_array) - window_size + 1, window_size - overlap):
+            end = start + window_size
+            if end > len(self.feature_array):
+                end = len(self.feature_array)
+            window_indices.append((start, end))
+        
+        if not window_indices:
+            print("Error: No valid windows found.")
             return None
+        
+        # Process each window
+        networks = []
+        path_complexes = []
+        
+        for start, end in window_indices:
+            # Create network for window
+            window_features = self.feature_array[start:end]
+            window_dist = self.temporal_distance_matrix[start:end, start:end]
             
+            # Compute adaptive epsilon range
+            distances = window_dist[window_dist > 0]
+            if len(distances) == 0:
+                continue
+                
+            min_eps = min_epsilon if min_epsilon is not None else np.percentile(distances, 5)
+            max_eps = max_epsilon if max_epsilon is not None else np.percentile(distances, 85)
+            
+            # Create network
+            G = self.construct_directed_network(epsilon=max_eps, enforce_temporal=True)
+            if G is None or G.number_of_edges() == 0:
+                continue
+                
+            networks.append(G)
+            
+            # Compute path complex
+            path_complex = self.compute_path_complex(G, max_path_length=max_path_length)
+            path_complexes.append(path_complex)
+        
+        # Process homology
+        print("Computing homology in dimensions 0-2...")
+        
+        # Process each dimension
+        persistence_summary = {0: [], 1: [], 2: []}
+        for dim in range(3):
+            dim_start = time.time()
+            for complex_idx, path_complex in enumerate(path_complexes):
+                # Compute homology for this dimension
+                boundary_matrix = self._compute_homology_from_boundary(path_complex)
+                if boundary_matrix is not None:
+                    betti = np.linalg.matrix_rank(boundary_matrix)
+                    persistence_summary[dim].append(betti)
+        
+        # Compute persistence stability
+        stability = {}
+        for dim in range(3):
+            if persistence_summary[dim]:
+                stability[dim] = len([x for x in persistence_summary[dim] if x > 0]) / len(persistence_summary[dim])
+            else:
+                stability[dim] = 0
+        
+        print("Persistent homology computation completed.")
+        
+        return persistence_summary, stability
+    
     def _generate_zigzag_visualizations(self, output_dir):
         """Helper method to generate visualizations for zigzag persistence results."""
         os.makedirs(output_dir, exist_ok=True)

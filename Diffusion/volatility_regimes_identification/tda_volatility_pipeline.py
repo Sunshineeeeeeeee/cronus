@@ -150,9 +150,19 @@ class TDAVolatilityPipeline:
             **tda_params
         )
         
-        # Initialize result DataFrame with training results
+        # Initialize result DataFrame with training results and add regime column
         result_df = df.copy()
-        result_df.loc[:training_batch-1, 'regime'] = self.regimes
+        
+        # Create the regime column if it doesn't exist
+        if 'regime' not in result_df.columns:
+            result_df['regime'] = np.nan
+        
+        # Assign regimes to the training portion
+        result_df.iloc[:training_batch, result_df.columns.get_loc('regime')] = self.regimes
+        
+        # Add confidence column if not present
+        if 'regime_confidence' not in result_df.columns:
+            result_df['regime_confidence'] = np.nan
         
         # Extend to remaining data if any
         if extension_df is not None and len(extension_df) > 0:
@@ -190,8 +200,8 @@ class TDAVolatilityPipeline:
                 print(f"Batch regime distribution: {np.bincount(batch_result['regimes'])}")
             
             # Update result DataFrame with batch results
-            result_df.loc[training_batch:, 'regime'] = all_regimes
-            result_df.loc[training_batch:, 'regime_confidence'] = all_confidences
+            result_df.iloc[training_batch:, result_df.columns.get_loc('regime')] = all_regimes
+            result_df.iloc[training_batch:, result_df.columns.get_loc('regime_confidence')] = all_confidences
             
             print(f"Extension completed in {time.time() - extension_start:.2f} seconds")
             print(f"Final regime distribution: {np.bincount(all_regimes)}")
@@ -989,8 +999,8 @@ class TDAVolatilityPipeline:
             print(f"Batch regime distribution: {np.bincount(batch_result['regimes'])}")
         
         # Add predictions to result DataFrame
-        result_df['regime'] = all_regimes
-        result_df['regime_confidence'] = all_confidences
+        result_df.iloc[:, result_df.columns.get_loc('regime')] = all_regimes
+        result_df.iloc[:, result_df.columns.get_loc('regime_confidence')] = all_confidences
         
         print("Regime extension completed")
         print(f"Final regime distribution: {np.bincount(all_regimes)}")

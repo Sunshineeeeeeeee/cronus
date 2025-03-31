@@ -557,12 +557,15 @@ class TopologicalDataAnalyzer:
                     flat_dists = flat_dists[flat_dists > 0]  # Exclude zeros
                     
                     # Adaptive thresholds based on window's own distribution
-                    # Use 10th percentile for more selective connections instead of min_epsilon
+                    # Use minimum epsilon or 10th percentile, whichever is higher
                     local_min_epsilon = max(min_epsilon, np.percentile(flat_dists, 10) if len(flat_dists) > 0 else min_epsilon)
-                    # Use more selective upper bound to create more varied networks
-                    local_max_epsilon = min(max_epsilon, np.percentile(flat_dists, 50) if len(flat_dists) > 0 else max_epsilon)
+                    # Use maximum epsilon or 80th percentile, whichever is lower - changed from 50th to better respect optimizer range
+                    local_max_epsilon = min(max_epsilon, np.percentile(flat_dists, 80) if len(flat_dists) > 0 else max_epsilon)
                     
-                    print(f"Window {len(window_indices)}: Using adaptive epsilon range [{local_min_epsilon:.4f}, {local_max_epsilon:.4f}]")
+                    # Print the range with the correct ordering (min to max)
+                    min_display = min(local_min_epsilon, local_max_epsilon)
+                    max_display = max(local_min_epsilon, local_max_epsilon)
+                    print(f"Window {len(window_indices)}: Using adaptive epsilon range [{min_display:.4f}, {max_display:.4f}]")
                 else:
                     local_min_epsilon = min_epsilon
                     local_max_epsilon = max_epsilon

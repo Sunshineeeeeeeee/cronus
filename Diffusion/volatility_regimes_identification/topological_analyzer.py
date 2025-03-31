@@ -404,7 +404,7 @@ class TopologicalDataAnalyzer:
         dict
             Dictionary of paths by dimension
         """
-        max_path_length = min(max_path_length, 2)  # Ensure max path length is at most 2
+        # Allow for higher dimensions if specified
         print(f"Computing path complex with max path length {max_path_length}...")
         
         # Initialize path complex
@@ -416,13 +416,19 @@ class TopologicalDataAnalyzer:
             
         # Add 1-simplices (edges)
         for u, v in G.edges():
-            path_complex[1].append((u, v))
+            # Add weight information for richer structure
+            edge_weight = G[u][v].get('weight', 1.0)
+            if edge_weight > 1e-5:  # Only add significant edges
+                path_complex[1].append((u, v))
             
-        # Add higher-order paths - this is computationally expensive but builds the full complex
+        # Add higher-order paths with increased diversity
         for k in range(2, max_path_length + 1):
             print(f"Building dimension {k} paths...")
             start_time = time.time()
             path_count = 0
+            
+            # Use a set to prevent duplicate paths
+            new_paths = set()
             
             for path in path_complex[k-1]:
                 # Last vertex in the path
@@ -556,11 +562,17 @@ class TopologicalDataAnalyzer:
                     flat_dists = window_dist_matrix.flatten()
                     flat_dists = flat_dists[flat_dists > 0]  # Exclude zeros
                     
-                    # Adaptive thresholds based on window's own distribution
-                    # Use minimum epsilon or 10th percentile, whichever is higher
-                    local_min_epsilon = max(min_epsilon, np.percentile(flat_dists, 10) if len(flat_dists) > 0 else min_epsilon)
-                    # Use maximum epsilon or 80th percentile, whichever is lower - changed from 50th to better respect optimizer range
-                    local_max_epsilon = min(max_epsilon, np.percentile(flat_dists, 80) if len(flat_dists) > 0 else max_epsilon)
+                    # Use the optimal epsilon as center point, with a window-specific adjustment
+                    # This ensures we prioritize the optimal value that maximizes information gain
+                    window_median = np.median(flat_dists)
+                    global_median = np.median(dist_matrix.flatten()[dist_matrix.flatten() > 0])
+                    
+                    # Adjust optimal epsilon for this window based on median ratio
+                    window_optimal = max_epsilon * (window_median / global_median) if global_median > 0 else max_epsilon
+                    
+                    # Set local range around the optimal value
+                    local_min_epsilon = max(min_epsilon, min(window_optimal * 0.8, np.percentile(flat_dists, 40) if len(flat_dists) > 0 else min_epsilon))
+                    local_max_epsilon = min(max_epsilon * 1.2, max(window_optimal * 1.2, np.percentile(flat_dists, 80) if len(flat_dists) > 0 else max_epsilon))
                     
                     # Print the range with the correct ordering (min to max)
                     min_display = min(local_min_epsilon, local_max_epsilon)
@@ -884,24 +896,83 @@ class TopologicalDataAnalyzer:
             print(f"Warning: Error computing zigzag transition strength: {str(e)}")
             return None
     
-    def identify_regimes(self, n_regimes=3, use_topological_features=True):
+    def _cluster_time_series_regimes(self, n_regimes, features, temporal_weight=0.3):
         """
-        Identify volatility regimes using topological features and enhanced spectral clustering.
+        Specialized clustering method for time series regimes that incorporates temporal coherence.
         
         Parameters:
         -----------
         n_regimes : int
             Number of regimes to identify
-        use_topological_features : bool
-            Whether to use extracted topological features for regime identification
+        features : numpy.ndarray
+            Feature matrix
+        temporal_weight : float
+            Weight for temporal coherence (0 to 1)
             
         Returns:
         --------
         numpy.ndarray
-            Array of regime labels for each data point
+            Array of regime labels
         """
-        start_time = time.time()
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.mixture import GaussianMixture
+        
+        # Scale features
+        scaler = StandardScaler()
+        scaled_features = scaler.fit_transform(features)
+        
+        # Add temporal information
+        temporal_features = np.arange(len(features)).reshape(-1, 1) / len(features)
+        
+        # Combine features with temporal information
+        combined_features = np.hstack([
+            scaled_features * (1 - temporal_weight),
+            temporal_features * temporal_weight
+        ])
+        
+        # Initialize best model
+        best_gmm = None
+        best_bic = np.inf
+        best_labels = None
+        
+        # Try multiple initializations
+        for _ in range(5):
+            gmm = GaussianMixture(
+                n_components=n_regimes,
+                covariance_type='full',
+                n_init=20,
+                random_state=np.random.randint(1000)
+            )
+            
+            gmm.fit(combined_features)
+            labels = gmm.predict(combined_features)
+            
+            # Compute temporal coherence score
+            temporal_switches = np.sum(np.diff(labels) != 0)
+            switch_penalty = temporal_switches / len(labels)
+            
+            # Adjusted BIC score with temporal coherence
+            adjusted_bic = gmm.bic(combined_features) * (1 + switch_penalty)
+            
+            if adjusted_bic < best_bic:
+                best_bic = adjusted_bic
+                best_gmm = gmm
+                best_labels = labels
+        
+        # Get regime probabilities
+        regime_probs = best_gmm.predict_proba(combined_features)
+        
+        # Store regime stability
+        self.regime_stability = np.max(regime_probs, axis=1)
+        
+        return best_labels
+
+    def identify_regimes(self, n_regimes=3, use_topological_features=True):
+        """
+        Identify volatility regimes using topological features and enhanced clustering.
+        """
         print(f"Identifying {n_regimes} volatility regimes...")
+        start_time = time.time()
         
         # Ensure we have a distance matrix
         if self.temporal_distance_matrix is None:
@@ -909,11 +980,10 @@ class TopologicalDataAnalyzer:
         
         # Base feature set with NaN handling
         scaler = RobustScaler(unit_variance=True)
-        base_features = np.nan_to_num(self.features, nan=0.0)  # Replace NaNs with 0
+        base_features = np.nan_to_num(self.features, nan=0.0)
         base_features = scaler.fit_transform(base_features)
         
         if use_topological_features:
-            # Extract topological features if they haven't been computed
             if not hasattr(self, 'topological_features'):
                 print("\n=== Extracting Topological Features ===")
                 topo_features, topo_feature_names = self.extract_topological_features()
@@ -923,8 +993,6 @@ class TopologicalDataAnalyzer:
                 for i, name in enumerate(topo_feature_names):
                     print(f"  {i+1}. {name}: {topo_features[i]:.4f}")
                 print("======================================\n")
-            else:
-                print(f"Using {len(self.topological_features)} pre-computed topological features")
             
             # Create topological feature matrix per point
             n_samples = self.n_samples
@@ -960,125 +1028,12 @@ class TopologicalDataAnalyzer:
         else:
             combined_features = base_features
         
-        # Compute transition strength from zigzag persistence
-        has_zigzag = hasattr(self, 'path_zigzag_diagrams') and self.path_zigzag_diagrams is not None
-        
-        # Build affinity matrix for clustering with NaN handling
-        n_samples = self.n_samples
-        affinity = np.zeros((n_samples, n_samples))
-        
-        # Compute adaptive bandwidth for each point
-        distances = squareform(pdist(combined_features))
-        distances = np.nan_to_num(distances, nan=np.nanmean(distances))  # Replace NaNs with mean distance
-        k = min(15, n_samples - 1)  # k-nearest neighbors
-        sorted_distances = np.sort(distances, axis=1)
-        local_scales = sorted_distances[:, k].reshape(-1, 1)
-        local_scales = np.maximum(local_scales, 1e-8)  # Ensure non-zero bandwidth
-        
-        # Enhanced temporal coherence with adaptive window
-        temporal_coherence = np.zeros((n_samples, n_samples))
-        adaptive_window = max(5, int(n_samples * 0.02))  # Adaptive window size
-        
-        for i in range(n_samples):
-            lower_bound = max(0, i - adaptive_window)
-            upper_bound = min(n_samples, i + adaptive_window + 1)
-            for j in range(lower_bound, upper_bound):
-                if i != j:
-                    # Exponential decay for temporal coherence
-                    temporal_weight = np.exp(-abs(i - j) / adaptive_window)
-                    temporal_coherence[i, j] = temporal_weight
-        
-        # Get transition strength if zigzag persistence was computed
-        if has_zigzag:
-            transition_strength = self._compute_zigzag_transition_strength()
-            if transition_strength is not None:
-                transition_strength = np.nan_to_num(transition_strength, nan=0.0)
-        else:
-            transition_strength = None
-        
-        # Build the affinity matrix with robust computation
-        for i in range(n_samples):
-            for j in range(i+1, n_samples):
-                try:
-                    # Compute feature similarity with adaptive bandwidth
-                    feature_dist = distances[i, j]
-                    bandwidth = np.mean([local_scales[i], local_scales[j]])
-                    base_affinity = np.exp(-feature_dist**2 / (2 * bandwidth**2))
-                    
-                    # Enhanced temporal weighting
-                    temporal_effect = 1.0 + temporal_coherence[i, j]
-                    
-                    # Incorporate zigzag information if available
-                    if has_zigzag and transition_strength is not None:
-                        zigzag_boost = 1.0 + transition_strength[i, j] * 2.0
-                        affinity[i, j] = base_affinity * temporal_effect * zigzag_boost
-                    else:
-                        affinity[i, j] = base_affinity * temporal_effect
-                    
-                    affinity[j, i] = affinity[i, j]  # Symmetric matrix
-                except Exception as e:
-                    # If computation fails, use a fallback value
-                    affinity[i, j] = affinity[j, i] = np.exp(-1.0)  # Conservative fallback
-        
-        # Clean and normalize affinity matrix
-        affinity = np.nan_to_num(affinity, nan=0.0)  # Replace any remaining NaNs
-        if np.max(affinity) > 0:
-            affinity = affinity / np.max(affinity)
-        np.fill_diagonal(affinity, 0)
-        
-        print(f"Affinity matrix range: [{np.min(affinity):.4f}, {np.max(affinity):.4f}]")
-        
-        # Try spectral clustering first
-        try:
-            clustering = SpectralClustering(
-                n_clusters=n_regimes,
-                affinity='precomputed',
-                random_state=42,
-                assign_labels='kmeans',
-                n_init=20
-            )
-            regime_labels = clustering.fit_predict(affinity)
-            
-            # Check regime balance
-            regime_counts = np.bincount(regime_labels)
-            balance_ratio = np.min(regime_counts) / np.max(regime_counts)
-            
-            # If severely imbalanced, try alternative clustering
-            if balance_ratio < 0.15:
-                raise ValueError("Imbalanced clustering detected")
-            
-        except Exception as e:
-            print(f"Spectral clustering failed: {str(e)}")
-            print("Falling back to robust GMM clustering...")
-            
-            # Use PCA for dimensionality reduction
-            from sklearn.decomposition import PCA
-            
-            # Determine number of components to keep 95% of variance
-            pca = PCA(n_components=0.95, random_state=42)
-            reduced_features = pca.fit_transform(combined_features)
-            
-            # Fit GMM with multiple initializations
-            from sklearn.mixture import GaussianMixture
-            
-            best_gmm = None
-            best_bic = np.inf
-            
-            for _ in range(5):  # Try multiple initializations
-                gmm = GaussianMixture(
-                    n_components=n_regimes,
-                    covariance_type='full',
-                    n_init=20,
-                    random_state=np.random.randint(1000)
-                )
-                gmm.fit(reduced_features)
-                
-                bic = gmm.bic(reduced_features)
-                if bic < best_bic:
-                    best_bic = bic
-                    best_gmm = gmm
-            
-            regime_labels = best_gmm.predict(reduced_features)
+        # Use specialized time series regime clustering
+        regime_labels = self._cluster_time_series_regimes(
+            n_regimes=n_regimes,
+            features=combined_features,
+            temporal_weight=0.3
+        )
         
         # Store regime labels
         self.regime_labels = regime_labels
@@ -1094,12 +1049,6 @@ class TopologicalDataAnalyzer:
     def extract_topological_features(self):
         """
         Extract topological features from persistent homology and zigzag persistence.
-        These features capture the structural characteristics of market microstructure.
-        
-        Returns:
-        --------
-        tuple
-            (features_array, feature_names) - Array of topological features and their names
         """
         start_time = time.time()
         print("Extracting topological features...")
@@ -1114,86 +1063,54 @@ class TopologicalDataAnalyzer:
         
         if not has_persistence and not has_zigzag:
             print("No persistence computations found. Computing persistent homology...")
-            self.compute_persistent_homology()
+            self._calculate_persistence_diagrams()
             has_persistence = True
-        elif has_zigzag:
-            print("Using existing zigzag persistence computations...")
         
         feature_counts = {"persistence": 0, "zigzag": 0, "network": 0}
         
-        # 1. Features from standard persistence
+        # 1. Extract features from persistence diagrams
         if has_persistence:
             print("Extracting features from persistence diagrams...")
-            # Extract features from persistence diagrams
-            persistence = self.persistence_diagrams
-            
-            # For each dimension, compute summary statistics
-            for dim in range(3):  # Dimensions 0, 1, 2 only
+            for dim in range(3):  # Dimensions 0, 1, 2
                 # Get persistence pairs for this dimension
-                # GUDHI format: (dimension, (birth, death))
-                pairs = [(p[1][0], p[1][1]) for p in persistence if p[0] == dim]
+                pairs = [(birth, death) for dim_pair in self.persistence_diagrams 
+                        if dim_pair[0] == dim 
+                        for birth, death in [dim_pair[1]]]
                 
                 if pairs:
-                    # Convert to array for easier computation
-                    pairs_array = np.array(pairs)
-                    
-                    # Filter out infinite death values
-                    finite_pairs = pairs_array[np.isfinite(pairs_array[:, 1])]
+                    pairs = np.array(pairs)
+                    finite_pairs = pairs[np.isfinite(pairs[:, 1])]
                     
                     if len(finite_pairs) > 0:
-                        # Compute persistence lifetimes
+                        # Compute persistence features
                         lifetimes = finite_pairs[:, 1] - finite_pairs[:, 0]
+                        features = {
+                            f'persistence_dim{dim}_count': len(pairs),
+                            f'persistence_dim{dim}_max_lifetime': np.max(lifetimes),
+                            f'persistence_dim{dim}_mean_lifetime': np.mean(lifetimes),
+                            f'persistence_dim{dim}_std_lifetime': np.std(lifetimes),
+                            f'persistence_dim{dim}_birth_mean': np.mean(finite_pairs[:, 0]),
+                            f'persistence_dim{dim}_death_mean': np.mean(finite_pairs[:, 1]),
+                            f'persistence_dim{dim}_persistence_entropy': -np.sum((lifetimes/np.sum(lifetimes)) * np.log(lifetimes/np.sum(lifetimes) + 1e-10))
+                        }
                         
-                        # Compute summary statistics
-                        features = {
-                            f'persistence_dim{dim}_count': len(pairs),
-                            f'persistence_dim{dim}_max_lifetime': np.max(lifetimes) if len(lifetimes) > 0 else 0,
-                            f'persistence_dim{dim}_mean_lifetime': np.mean(lifetimes) if len(lifetimes) > 0 else 0,
-                            f'persistence_dim{dim}_std_lifetime': np.std(lifetimes) if len(lifetimes) > 0 else 0,
-                            f'persistence_dim{dim}_sum_lifetime': np.sum(lifetimes) if len(lifetimes) > 0 else 0,
-                            f'persistence_dim{dim}_birth_mean': np.mean(finite_pairs[:, 0]) if len(finite_pairs) > 0 else 0,
-                            f'persistence_dim{dim}_death_mean': np.mean(finite_pairs[:, 1]) if len(finite_pairs) > 0 else 0
-                        }
-                    else:
-                        features = {
-                            f'persistence_dim{dim}_count': len(pairs),
-                            f'persistence_dim{dim}_max_lifetime': 0,
-                            f'persistence_dim{dim}_mean_lifetime': 0,
-                            f'persistence_dim{dim}_std_lifetime': 0,
-                            f'persistence_dim{dim}_sum_lifetime': 0,
-                            f'persistence_dim{dim}_birth_mean': 0,
-                            f'persistence_dim{dim}_death_mean': 0
-                        }
-                else:
-                    features = {
-                        f'persistence_dim{dim}_count': 0,
-                        f'persistence_dim{dim}_max_lifetime': 0,
-                        f'persistence_dim{dim}_mean_lifetime': 0,
-                        f'persistence_dim{dim}_std_lifetime': 0,
-                        f'persistence_dim{dim}_sum_lifetime': 0,
-                        f'persistence_dim{dim}_birth_mean': 0,
-                        f'persistence_dim{dim}_death_mean': 0
-                    }
-                
-                # Add features
-                for name, value in features.items():
-                    topo_features.append(value)
-                    feature_names.append(name)
-                    feature_counts["persistence"] += 1
+                        # Add features
+                        for name, value in features.items():
+                            topo_features.append(value)
+                            feature_names.append(name)
+                            feature_counts["persistence"] += 1
         
-        # 2. Features from zigzag persistence
+        # 2. Extract zigzag persistence features (existing code)
         if has_zigzag:
             print("Extracting features from zigzag persistence...")
             zigzag = self.path_zigzag_diagrams
             
-            # Extract Betti number statistics for each dimension
-            for dim in range(3):  # Dimensions 0, 1, 2 only
+            for dim in range(3):
                 betti_key = f'betti_{dim}'
                 if betti_key in zigzag['betti_numbers']:
                     betti_series = zigzag['betti_numbers'][betti_key]
                     
                     if betti_series:
-                        # Compute summary statistics
                         features = {
                             f'zigzag_dim{dim}_betti_mean': np.mean(betti_series),
                             f'zigzag_dim{dim}_betti_max': np.max(betti_series),
@@ -1201,26 +1118,16 @@ class TopologicalDataAnalyzer:
                             f'zigzag_dim{dim}_betti_std': np.std(betti_series),
                             f'zigzag_dim{dim}_betti_range': np.max(betti_series) - np.min(betti_series)
                         }
-                    else:
-                        features = {
-                            f'zigzag_dim{dim}_betti_mean': 0,
-                            f'zigzag_dim{dim}_betti_max': 0,
-                            f'zigzag_dim{dim}_betti_min': 0,
-                            f'zigzag_dim{dim}_betti_std': 0,
-                            f'zigzag_dim{dim}_betti_range': 0
-                        }
-                    
-                    # Add features
-                    for name, value in features.items():
-                        topo_features.append(value)
-                        feature_names.append(name)
-                        feature_counts["zigzag"] += 1
-            
-            # Add structural transition features
+                        
+                        for name, value in features.items():
+                            topo_features.append(value)
+                            feature_names.append(name)
+                            feature_counts["zigzag"] += 1
+        
+            # Add transition features
             transitions = zigzag['betti_numbers']['transitions']
             if transitions:
                 transition_by_dim = {}
-                
                 for t in transitions:
                     dim = t['dimension']
                     if dim not in transition_by_dim:
@@ -1240,22 +1147,18 @@ class TopologicalDataAnalyzer:
                         feature_names.append(name)
                         feature_counts["zigzag"] += 1
         
-        # 3. Add network statistics as topological features
+        # 3. Add network statistics (existing code)
         if hasattr(self, 'path_zigzag_diagrams') and self.path_zigzag_diagrams is not None:
             print("Extracting network statistics as topological features...")
             networks = self.path_zigzag_diagrams['window_networks']
             
-            # Compute mean statistics across all window networks
             network_stats = []
             for G in networks:
                 stats = {}
-                
-                # Network size and connectivity
                 stats['n_nodes'] = G.number_of_nodes()
                 stats['n_edges'] = G.number_of_edges()
                 stats['density'] = nx.density(G)
                 
-                # Degree statistics
                 degrees = [d for _, d in G.degree()]
                 if degrees:
                     stats['degree_mean'] = np.mean(degrees)
@@ -1268,9 +1171,7 @@ class TopologicalDataAnalyzer:
                 
                 network_stats.append(stats)
             
-            # Compute summary statistics across all windows
             if network_stats:
-                # Average network statistics
                 avg_stats = {
                     'network_nodes_mean': np.mean([s['n_nodes'] for s in network_stats]),
                     'network_edges_mean': np.mean([s['n_edges'] for s in network_stats]),
@@ -1279,7 +1180,6 @@ class TopologicalDataAnalyzer:
                     'network_degree_max': np.max([s['degree_max'] for s in network_stats])
                 }
                 
-                # Add features
                 for name, value in avg_stats.items():
                     topo_features.append(value)
                     feature_names.append(name)
@@ -1291,11 +1191,41 @@ class TopologicalDataAnalyzer:
         print(f" - {feature_counts['zigzag']} zigzag persistence features")
         print(f" - {feature_counts['network']} network statistics features")
         
+        # Print all extracted features and their values
+        print("\nExtracted features:")
+        for i, (name, value) in enumerate(zip(feature_names, topo_features), 1):
+            print(f"  {i}. {name}: {value:.4f}")
+        print("======================================\n")
+        
         # Convert to numpy array
         self.topological_features = np.array(topo_features)
         self.topological_feature_names = feature_names
         
         return self.topological_features, self.topological_feature_names
+    
+    def _calculate_persistence_diagrams(self):
+        """Helper method to calculate persistence diagrams."""
+        from gudhi import SimplexTree
+        
+        # Create simplex tree from the distance matrix
+        st = SimplexTree()
+        
+        # Add vertices
+        for i in range(self.n_samples):
+            st.insert([i], 0.0)
+        
+        # Add edges based on distance matrix
+        for i in range(self.n_samples):
+            for j in range(i+1, self.n_samples):
+                if self.temporal_distance_matrix[i, j] <= 1.0:  # Normalized threshold
+                    st.insert([i, j], self.temporal_distance_matrix[i, j])
+        
+        # Compute persistence
+        st.persistence()
+        
+        # Get persistence diagram
+        self.persistence_diagrams = st.persistence_pairs()
+        return self.persistence_diagrams
     
     def analyze_regimes(self, output_dir=None):
         """
@@ -1912,44 +1842,17 @@ class TopologicalDataAnalyzer:
     
     def optimize_epsilon_threshold(self, target_index=None, n_trials=10, min_percentile=5, max_percentile=90):
         """
-        Optimize epsilon threshold using mutual information criteria.
-        
-        Parameters:
-        -----------
-        target_index : int or None
-            Index of target variable for optimization (if None, will look for volatility)
-        n_trials : int
-            Number of epsilon values to test
-        min_percentile : int
-            Minimum percentile of distance distribution to consider
-        max_percentile : int
-            Maximum percentile of distance distribution to consider
-            
-        Returns:
-        --------
-        tuple
-            (optimal_epsilon, min_epsilon, max_epsilon, information_gain)
+        Optimize epsilon threshold using mutual information criteria with improved range selection.
         """
-        # Ensure temporal distance matrix is computed
-        if not hasattr(self, 'temporal_distance_matrix') or self.temporal_distance_matrix is None:
-            raise ValueError("Temporal distance matrix must be computed first")
-            
-        # Find a suitable target variable if not provided
+        # Find target index as before...
         if target_index is None:
-            # First, look explicitly for 'volatility' in the feature names (case-insensitive)
             volatility_indices = [i for i, name in enumerate(self.feature_names) 
                                if 'volatil' in name.lower()]
-            
             if volatility_indices:
                 target_index = volatility_indices[0]
                 print(f"Found volatility feature at index {target_index}: {self.feature_names[target_index]}")
             else:
-                # If volatility not found, look for other potential signal features
                 signal_keywords = ['volatility', 'vol', 'vix', 'price', 'return', 'spread']
-                
-                # Print available feature names for debugging
-                print(f"Available features for target selection: {self.feature_names}")
-                
                 for keyword in signal_keywords:
                     signal_indices = [i for i, name in enumerate(self.feature_names) 
                                    if keyword.lower() in name.lower()]
@@ -1957,59 +1860,57 @@ class TopologicalDataAnalyzer:
                         target_index = signal_indices[0]
                         print(f"Using {self.feature_names[target_index]} as target for epsilon optimization")
                         break
-                        
-                # If no signal feature found, fall back to first feature
                 if target_index is None:
                     target_index = 0
-                    print(f"No target variable found. Using first feature ({self.feature_names[0]}) as target for epsilon optimization.")
-        else:
-            # Verify that the provided index is valid
-            if target_index < 0 or target_index >= len(self.feature_names):
-                print(f"Warning: Provided target_index {target_index} is out of bounds. Using first feature.")
-                target_index = 0
-            else:
-                print(f"Using provided target feature: {self.feature_names[target_index]} at index {target_index}")
-        
-        # Get target variable (feature)
+
+        # Get target variable
         target = self.features[:, target_index]
         
-        # Get the distribution of distances for selecting epsilon values
+        # Get distance distribution with improved filtering
         distances = self.temporal_distance_matrix.flatten()
-        distances = distances[distances > 0]  # Exclude zeros (self-distances)
+        distances = distances[distances > 0]  # Exclude zeros
         
-        # Calculate min and max epsilon for trials
-        min_epsilon = np.percentile(distances, min_percentile)
-        max_epsilon = np.percentile(distances, max_percentile)
+        # Use robust statistics for range determination
+        median_dist = np.median(distances)
+        iqr = np.percentile(distances, 75) - np.percentile(distances, 25)
         
-        # Try different epsilon values within range
+        # Set range based on robust statistics
+        min_epsilon = max(np.percentile(distances, min_percentile), median_dist - 1.5 * iqr)
+        max_epsilon = min(np.percentile(distances, max_percentile), median_dist + 1.5 * iqr)
+        
+        # Normalize distances to [0,1] for more stable information gain
+        norm_factor = np.median(distances[distances <= max_epsilon])
+        distances = distances / norm_factor
+        min_epsilon = min_epsilon / norm_factor
+        max_epsilon = max_epsilon / norm_factor
+        
+        # Try different epsilon values within normalized range
         epsilon_values = np.linspace(min_epsilon, max_epsilon, n_trials)
         information_gains = []
         
         for epsilon in epsilon_values:
-            # Create adjacency matrix based on threshold
-            adjacency = (self.temporal_distance_matrix <= epsilon).astype(int)
+            # Create adjacency matrix based on normalized threshold
+            adjacency = (self.temporal_distance_matrix / norm_factor <= epsilon).astype(int)
             
             # Estimate mutual information gain with this threshold
             information_gain = self._estimate_mutual_information_gain(target, adjacency)
             information_gains.append(information_gain)
             
-            # Print progress
+            # Print progress with denormalized epsilon
             percentile = np.sum(distances <= epsilon) / len(distances) * 100
-            print(f"Epsilon {epsilon:.4f} (percentile {percentile:.1f}%): Information gain = {information_gain:.4f}")
-            
-        # Find optimal epsilon (maximize information gain)
+            print(f"Epsilon {epsilon * norm_factor:.4f} (percentile {percentile:.1f}%): Information gain = {information_gain:.4f}")
+        
+        # Find optimal epsilon
         optimal_idx = np.argmax(information_gains)
-        optimal_epsilon = epsilon_values[optimal_idx]
+        optimal_epsilon = epsilon_values[optimal_idx] * norm_factor  # Denormalize
         optimal_gain = information_gains[optimal_idx]
         
-        # Report optimal value
-        percentile = np.sum(distances <= optimal_epsilon) / len(distances) * 100
-        print(f"Optimal epsilon: {optimal_epsilon:.4f} (at {percentile:.1f} percentile)")
-        print(f"Information gain: {optimal_gain:.4f}")
+        # Recommend range around optimal (denormalized)
+        recommended_min = max(optimal_epsilon * 0.5, min_epsilon * norm_factor)
+        recommended_max = min(optimal_epsilon * 1.5, max_epsilon * norm_factor)
         
-        # Recommend a range around the optimal value (±25%)
-        recommended_min = max(optimal_epsilon * 0.75, min_epsilon)
-        recommended_max = min(optimal_epsilon * 1.50, max_epsilon)
+        print(f"Optimal epsilon: {optimal_epsilon:.4f} (at {np.sum(distances <= epsilon_values[optimal_idx]) / len(distances) * 100:.1f} percentile)")
+        print(f"Information gain: {optimal_gain:.4f}")
         print(f"Recommended epsilon range: [{recommended_min:.4f}, {recommended_max:.4f}]")
         
         return optimal_epsilon, recommended_min, recommended_max, optimal_gain
